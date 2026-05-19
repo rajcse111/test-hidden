@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: apps/backend/requirements.lock
+      - run: pip install -r apps/backend/requirements.lock
+      - run: ruff check apps/backend
+      - run: pytest apps/backend/tests
+
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm install
+      - run: npm run lint --workspace @interview/desktop
+      - run: npm run test --workspace @interview/desktop
+      - run: npm run build --workspace @interview/desktop

@@ -1,0 +1,33 @@
+{
+  "name": "ai-interview-assistant-overlay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Production-grade desktop AI interview assistant overlay.",
+  "workspaces": [
+    "apps/desktop",
+    "packages/shared",
+    "packages/ui"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @interview/desktop",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "format": "prettier --write .",
+    "test": "npm run test --workspaces --if-present",
+    "backend:dev": "uvicorn app.main:app --reload --app-dir apps/backend --host 0.0.0.0 --port 8000",
+    "desktop:package": "npm run package --workspace @interview/desktop",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^9.1.0",
+    "husky": "^9.1.7",
+    "prettier": "^3.3.3"
+  },
+  "engines": {
+    "node": ">=20.11.0",
+    "npm": ">=8.6.0"
+  }
+}
