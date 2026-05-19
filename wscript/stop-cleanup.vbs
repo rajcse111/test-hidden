@@ -13,7 +13,7 @@ Set oFSO   = CreateObject("Scripting.FileSystemObject")
 sRoot = oFSO.GetParentFolderName(oFSO.GetParentFolderName(WScript.ScriptFullName))
 
 ' ============================================================
-' 1. Kill simple processes (single-word names)
+' 1. Kill child processes first (node, python, uvicorn, ollama)
 ' ============================================================
 ' /F = force terminate, /T = include child processes
 ' Window style 0 = hidden; bWaitOnReturn = True.
@@ -40,25 +40,62 @@ For Each oProc In oProcs
     oProc.Terminate()
 Next
 Set oProcs = Nothing
+On Error GoTo 0
+
+' ============================================================
+' 3. Kill cmd.exe processes holding the log files open
+' ============================================================
+' The start-*.vbs scripts launch backends via "cmd /c ... >> *.log 2>&1".
+' Those cmd.exe processes keep the log files locked even after their child
+' processes (node, python, uvicorn) are killed — they are the file owners.
+'
+' Matching strategy:
+'   backend  -> cmd.exe running temp_backend_start.bat  (bat file name in CommandLine)
+'   frontend -> cmd.exe with ">> frontend.log" in CommandLine
+'   ollama   -> cmd.exe with ">> ollama.log"   in CommandLine
+On Error Resume Next
+Set oProcs = oWMI.ExecQuery( _
+    "SELECT * FROM Win32_Process WHERE Name = 'cmd.exe'" & _
+    " AND (" & _
+    "  CommandLine LIKE '%temp_backend_start%'" & _
+    "  OR CommandLine LIKE '%frontend.log%'" & _
+    "  OR CommandLine LIKE '%ollama.log%'" & _
+    ")")
+For Each oProc In oProcs
+    oProc.Terminate()
+Next
+Set oProcs = Nothing
 Set oWMI   = Nothing
 On Error GoTo 0
 
 ' ============================================================
-' 3. Remove runtime files from the repo root
+' 4. Wait for the OS to flush all file handles
 ' ============================================================
-' FileExists check makes deletion idempotent; no error handling needed.
-Dim aFiles(3), sFile
+' Terminate() is asynchronous; give Windows 1.5 s to release handles
+' before we attempt deletion.  Without this pause, DeleteFile can still
+' raise 800A0046 "Permission denied" on a file that is mid-teardown.
+WScript.Sleep 1500
+
+' ============================================================
+' 5. Remove runtime files from the repo root
+' ============================================================
+' On Error Resume Next guards against any file that is still transitionally
+' locked (edge case) — those files are silently skipped.
+Dim aFiles(4), sFile
 
 aFiles(0) = sRoot & "\backend.log"
 aFiles(1) = sRoot & "\frontend.log"
 aFiles(2) = sRoot & "\ollama.log"
 aFiles(3) = sRoot & "\ollama_llama3_installed.flag"
+aFiles(4) = sRoot & "\temp_backend_start.bat"
 
+On Error Resume Next
 For Each sFile In aFiles
     If oFSO.FileExists(sFile) Then
         oFSO.DeleteFile sFile, True  ' True = force-delete even if read-only
     End If
 Next
+On Error GoTo 0
 
 ' ============================================================
 ' Cleanup

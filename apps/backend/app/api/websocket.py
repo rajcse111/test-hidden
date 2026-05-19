@@ -19,6 +19,7 @@ from app.schemas import (
 from app.services.llm import LlmOrchestrator
 from app.services.prompt_builder import PromptBuilder, PromptContext
 from app.services.session_manager import LiveSession
+from app.services.stt import AudioBuffer
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from loguru import logger
 from pydantic import TypeAdapter, ValidationError
@@ -41,6 +42,7 @@ async def interview_ws(websocket: WebSocket) -> None:
     stt = websocket.app.state.stt
     prompts = PromptBuilder()
     generation_task: asyncio.Task[None] | None = None
+    audio_buf = AudioBuffer()
 
     async with SessionLocal() as db:
         initial_id = str(uuid4())
@@ -89,21 +91,46 @@ async def interview_ws(websocket: WebSocket) -> None:
                                 }
                             )
                             continue
-                        text = await stt.transcribe_pcm(pcm, message.sampleRate, message.channels)
-                        if text:
-                            clean = text.strip()
-                            now = int(time() * 1000)
-                            segment = {
-                                "id": str(uuid4()),
-                                "sessionId": live.id,
-                                "speaker": "speaker",
-                                "text": clean,
-                                "startedAt": now,
-                                "endedAt": now,
-                                "isPartial": False,
-                            }
-                            await websocket.send_json({"type": "transcript.final", "segment": segment})
-                            live.append_transcript(clean, settings.transcript_context_segments)
+                        should_flush = audio_buf.push(pcm)
+                        if should_flush:
+                            if audio_buf.has_speech:
+                                # Transcribe the full utterance — Whisper sees a complete
+                                # sentence instead of an arbitrary fixed-size window
+                                utterance_pcm = audio_buf.flush()
+                                t0 = time()
+                                initial_prompt = " ".join(live.transcript[-3:])[-200:]
+                                text = await stt.transcribe_pcm(
+                                    utterance_pcm,
+                                    message.sampleRate,
+                                    message.channels,
+                                    initial_prompt=initial_prompt,
+                                )
+                                if text:
+                                    clean = text.strip()
+                                    if stt._has_repetition(clean):
+                                        logger.debug("[WS] repetition detected, dropping | text={!r}", clean[:60])
+                                        continue
+                                    elapsed_ms = (time() - t0) * 1000
+                                    logger.debug(
+                                        "[WS] utterance → transcript.final | total={:.0f} ms | text={!r}",
+                                        elapsed_ms,
+                                        clean[:60],
+                                    )
+                                    now = int(time() * 1000)
+                                    segment = {
+                                        "id": str(uuid4()),
+                                        "sessionId": live.id,
+                                        "speaker": "speaker",
+                                        "text": clean,
+                                        "startedAt": now,
+                                        "endedAt": now,
+                                        "isPartial": False,
+                                    }
+                                    await websocket.send_json({"type": "transcript.final", "segment": segment})
+                                    live.append_transcript(clean, settings.transcript_context_segments)
+                            else:
+                                # Silence-only buffer (no speech detected) — just reset
+                                audio_buf.flush()
                     case "transcript.manual":
                         generation_task = await _handle_transcript(
                             websocket, db, settings, llm, prompts, live, message.text, generation_task

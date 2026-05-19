@@ -2,7 +2,10 @@ class InterviewAudioProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.targetSampleRate = 16000;
-    this.chunkSize = Math.floor(16000 * 1.5);
+    // 250 ms chunks — fine-grained frames for server-side VAD to detect
+    // utterance boundaries; the backend accumulates frames and only runs
+    // Whisper when a full sentence ends (silence after speech)
+    this.chunkSize = Math.floor(16000 * 0.25);
     this.pending = [];
     this.pendingLength = 0;
     this.sourceRate = sampleRate;
@@ -34,6 +37,9 @@ class InterviewAudioProcessor extends AudioWorkletProcessor {
           offset += remaining;
         }
       }
+
+      // No client-side silence gate — Silero VAD in faster-whisper handles
+      // silence suppression server-side more accurately than an RMS threshold
       const pcm = new Int16Array(chunk.length);
       for (let index = 0; index < chunk.length; index += 1) {
         const sample = Math.max(-1, Math.min(1, chunk[index]));
