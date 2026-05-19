@@ -16,6 +16,7 @@ packages/
   shared/        # Shared TypeScript types (ClientMessage, ServerMessage, OverlayMode, etc.)
   ui/            # Shared UI component library
 scripts/         # PowerShell setup/dev scripts
+wscript/         # Windows VBScript launchers — start backend/frontend/Ollama in hidden windows
 data/            # SQLite DB written here at runtime (gitignored)
 logs/            # Log files written here at runtime (gitignored)
 ```
@@ -83,6 +84,9 @@ npm run build --workspace @interview/desktop
 npm run desktop:package        # Electron Builder → NSIS/DMG/AppImage
 make docker-up                 # Backend-only Docker (sqlite data persisted to ./data/)
 ```
+
+### CI (`.github/workflows/ci.yml`)
+Two independent jobs run on every push: **backend** (Python 3.11, `ruff check`, `pytest` against `requirements.lock`) and **desktop** (Node 20, `npm run lint`, `npm run test`, `npm run build`). Both must pass before merging.
 
 ## Architecture
 

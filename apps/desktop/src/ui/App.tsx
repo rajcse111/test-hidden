@@ -103,6 +103,7 @@ export function App(): JSX.Element {
       return;
     }
     setError(null);
+    store.setActiveTab("audio");
     if (liveSpeech.isSupported()) {
       liveSpeech.start(setInterimAudioText, appendAudioInputText);
     }
