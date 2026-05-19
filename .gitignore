@@ -37,6 +37,7 @@ npm-debug.log*
 yarn-debug.log*
 data/
 *.flag
+temp_backend_start.bat
 
 # ── Test & coverage ───────────────────────────────────────────────────────────
 coverage/

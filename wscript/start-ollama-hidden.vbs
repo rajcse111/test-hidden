@@ -16,7 +16,7 @@ cmd = "cmd /c " & _
       "ollama pull llama3 && " & _
       "echo installed > ollama_llama3_installed.flag" & _
       ") && " & _
-      "set OLLAMA_HOST=127.0.0.1:11435 && " & _
+      "set OLLAMA_HOST=127.0.0.1:11434 && " & _
       "echo ==== STARTED %date% %time% ==== >> ollama.log && " & _
       "ollama serve >> ollama.log 2>&1"
 

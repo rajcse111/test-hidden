@@ -10,7 +10,11 @@ if (!(Test-Path ".venv")) {
 }
 
 Write-Host "Installing backend dependencies..."
-.\.venv\Scripts\pip install -r apps\backend\requirements.lock
+if (Test-Path "apps\backend\requirements.lock") {
+  .\.venv\Scripts\pip install -r apps\backend\requirements.lock
+} else {
+  .\.venv\Scripts\pip install -r apps\backend\requirements.txt
+}
 
 if (!(Test-Path ".env")) {
   Copy-Item ".env.example" ".env"

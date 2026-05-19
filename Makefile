@@ -3,7 +3,11 @@
 install:
 	npm install
 	python -m venv .venv
-	.venv/Scripts/pip install -r apps/backend/requirements.lock
+	@if exist apps\backend\requirements.lock ( \
+		.venv\Scripts\pip install -r apps\backend\requirements.lock \
+	) else ( \
+		.venv\Scripts\pip install -r apps\backend\requirements.txt \
+	)
 
 dev:
 	npm run backend:dev
