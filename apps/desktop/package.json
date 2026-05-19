@@ -49,7 +49,7 @@
   },
   "build": {
     "appId": "com.interview.assistant.overlay",
-    "productName": "AI Interview Assistant",
+    "productName": "AI Answer Assistant",
     "directories": {
       "output": "release"
     },

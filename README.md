@@ -1,4 +1,4 @@
-# AI Interview Assistant Overlay
+# AI Answer Assistant Overlay
 
 ![Build](https://img.shields.io/badge/build-passing-placeholder)
 ![License](https://img.shields.io/badge/license-MIT-placeholder)

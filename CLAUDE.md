@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI Interview Assistant Overlay — a production desktop app combining an Electron transparent overlay, real-time microphone streaming, FastAPI WebSockets, Whisper transcription, OCR screen context, and streaming LLM answers.
+AI Answer Assistant Overlay — a production desktop app combining an Electron transparent overlay, real-time microphone streaming, FastAPI WebSockets, Whisper transcription, OCR screen context, and streaming LLM answers.
 
 ## Repository Layout
 
@@ -87,15 +87,27 @@ make docker-up                 # Backend-only Docker (sqlite data persisted to .
 ## Architecture
 
 ### Real-Time Pipeline
+
+Two separate paths flow through the WebSocket connection:
+
+**Audio → Transcript only** (no LLM trigger):
 ```
-Microphone → audioCapture.ts → base64 PCM chunks
-  → WebSocket (ws://localhost:8000/ws/interview)
-  → WhisperService.transcribe_pcm()
+Microphone → audioCapture.ts → base64 PCM chunks (audio.chunk)
+  → WhisperService.transcribe_pcm()   [CPU, int8, English-only]
+  → transcript.final back over WS
+  → assistantStore transcript segments
+```
+
+**Transcript → LLM answer** (triggered by transcript.manual):
+```
+liveSpeech.ts (Web Speech API) or manual input → transcript.manual message
   → PromptBuilder.build()
-  → LlmOrchestrator.stream()
+  → LlmOrchestrator.stream()   [new instance per WS connection]
   → assistant.delta tokens back over WS
   → assistantStore.appendAnswer()
 ```
+
+`liveSpeech.ts` sends `transcript.manual` when the user stops speaking, merging Web Speech API text with any audioCapture text. `audio.chunk` messages are for STT only — they never directly trigger the LLM.
 
 ### WebSocket Message Protocol
 Defined in `packages/shared/src/index.ts`. **Client sends:** `audio.chunk`, `transcript.manual`, `assistant.cancel`, `context.screen`, `ping`. **Server sends:** `session.ready`, `transcript.final`, `transcript.partial`, `assistant.delta`, `assistant.error`, `pong`.
@@ -112,7 +124,7 @@ All under `/api` prefix. Token auth via `X-Interview-Token` header when `INTERVI
 - `GET /health` — liveness check
 
 ### Electron IPC Boundary
-The preload script (`apps/desktop/electron/preload.ts`) exposes a narrow `window.interview` API via `contextBridge`. The renderer **never** calls `ipcRenderer` directly. Main process handles `overlay:set-click-through`, `overlay:set-invisible`, and `screen:capture`.
+The preload script (`apps/desktop/electron/preload.ts`) exposes a narrow `window.interview` API via `contextBridge`. The renderer **never** calls `ipcRenderer` directly. Main process handles `overlay:set-click-through`, `overlay:set-invisible`, `overlay:set-content-protection`, `overlay:get-content-protection`, and `screen:capture`.
 
 Global shortcuts: `Ctrl+Shift+Space` (toggle visibility), `Ctrl+Shift+L` (listening), `Ctrl+Shift+S` (screenshot), `Ctrl+Shift+X` (click-through), `Ctrl+Shift+P` (screen-capture protection toggle).
 
@@ -129,8 +141,8 @@ Two compiled targets co-exist in `apps/desktop` — do not mix their tsconfig se
 | Electron main | `electron/` | `dist-electron/` | `tsconfig.electron.json` | `NodeNext` |
 
 ### Backend Services
-- `app/services/llm.py` — `LlmOrchestrator` dispatches to `OpenAIProvider`, `OllamaProvider`, `GeminiProvider`, `OpenRouterProvider`. All providers implement `async stream()` returning `AsyncIterator[str]`.
-- `app/services/stt.py` — `WhisperService` wraps faster-whisper; loads model once, processes raw PCM bytes.
+- `app/services/llm.py` — `LlmOrchestrator` dispatches to `OpenAIProvider`, `OllamaProvider`, `GeminiProvider`, `OpenRouterProvider`. All providers implement `async stream()` returning `AsyncIterator[str]`. A new `LlmOrchestrator` is instantiated per WebSocket connection (not a singleton). `GeminiProvider` calls the Gemini REST API directly via httpx SSE — it does not use the Gemini Python SDK. `OllamaProvider` has 3-attempt retry with exponential backoff and hardcodes `keep_alive: -1` (model stays loaded) and `num_predict: 800`.
+- `app/services/stt.py` — `WhisperService` wraps faster-whisper; loads model lazily via `@cached_property`. Always runs on CPU with int8 quantization (`device="cpu"`, `compute_type="int8"`); transcription is English-only (`language="en"`). GPU inference is not configured.
 - `app/services/prompt_builder.py` — Builds OpenAI-style message lists for modes: `interview`, `coding`, `system-design`.
 - `app/services/session_manager.py` — In-memory `LiveSession` registry; holds `mode`, `provider`, `model`, rolling `transcript`, `screen_context`.
 - `app/services/ocr.py` — `OcrService` wraps pytesseract + Pillow; processes base64 PNG frames sent as `context.screen` messages.
@@ -164,6 +176,8 @@ See `.env.example` for the full list. Key ones:
 - `PRELOAD_WHISPER_MODEL` — `true` loads Whisper at startup instead of on first audio chunk
 - `VITE_BACKEND_URL` / `VITE_WS_URL` — must match running backend for the renderer
 - `VITE_BACKEND_TOKEN` — sent as `X-Interview-Token`; must match `INTERVIEW_AUTH_TOKEN` on backend
+- `OLLAMA_HOST` — Ollama API base URL (default `http://localhost:11434`)
+- `OPENROUTER_API_KEY` — API key for OpenRouter provider
 - `LOCAL_ONLY` — `true` restricts to Ollama only
 - `TRANSCRIPT_PERSISTENCE` — `true` to persist transcripts to SQLite (`data/interview_assistant.db`)
 - `TRANSCRIPT_CONTEXT_SEGMENTS` — rolling window size fed into prompts (default 60)

@@ -14,7 +14,7 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 
@@ -46,6 +46,7 @@ export function App(): JSX.Element {
   const listening = useAssistantStore((state) => state.listening);
   const [manualText, setManualText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const generationRef = useRef(0);
 
   useEffect(() => {
     if (import.meta.env.MODE === "test") return undefined;
@@ -66,13 +67,23 @@ export function App(): JSX.Element {
         }
       }
       if (message.type === "assistant.delta") {
-        appendAnswer(message.delta.content, message.delta.done);
+        if (useAssistantStore.getState()._generation === generationRef.current) {
+          appendAnswer(message.delta.content, message.delta.done);
+        }
       }
       if (message.type === "assistant.error") setError(message.message);
     });
     interviewSocket.connect();
     return () => unsubscribe();
   }, [addTranscript, appendAudioInputText, appendAnswer, setConnection, setSessionId]);
+
+  const startNewRequest = useCallback((sid: string, prompt: string) => {
+    interviewSocket.send({ type: "assistant.cancel", sessionId: sid });
+    useAssistantStore.getState().resetAnswer();
+    generationRef.current = useAssistantStore.getState()._generation;
+    useAssistantStore.getState().setActiveTab("answers");
+    interviewSocket.send({ type: "transcript.manual", sessionId: sid, text: prompt });
+  }, []);
 
   const toggleListening = useCallback(async () => {
     if (!sessionId) return;
@@ -87,20 +98,17 @@ export function App(): JSX.Element {
       setListening(false);
       latest.resetAudioInput();
       if (prompt) {
-        interviewSocket.send({ type: "assistant.cancel", sessionId });
-        latest.resetAnswer();
-        latest.setActiveTab("answers");
-        interviewSocket.send({ type: "transcript.manual", sessionId, text: prompt });
+        startNewRequest(sessionId, prompt);
       }
       return;
     }
     setError(null);
     if (liveSpeech.isSupported()) {
-      liveSpeech.start(setInterimAudioText, () => {});
+      liveSpeech.start(setInterimAudioText, appendAudioInputText);
     }
     await audioCapture.start(sessionId, { streamToBackend: true });
     setListening(true);
-  }, [listening, sessionId, setInterimAudioText, setListening]);
+  }, [listening, sessionId, setInterimAudioText, setListening, appendAudioInputText, startNewRequest]);
 
   const captureScreen = useCallback(async () => {
     if (!store.sessionId) return;
@@ -121,9 +129,7 @@ export function App(): JSX.Element {
 
   const submitManual = (): void => {
     if (!store.sessionId || !manualText.trim()) return;
-    store.resetAnswer();
-    store.setActiveTab("answers");
-    interviewSocket.send({ type: "transcript.manual", sessionId: store.sessionId, text: manualText });
+    startNewRequest(store.sessionId, manualText.trim());
     setManualText("");
   };
 
@@ -152,7 +158,7 @@ export function App(): JSX.Element {
               <Bot size={20} />
             </div>
             <div>
-              <h1 className="text-sm font-semibold tracking-normal">AI Interview Assistant</h1>
+              <h1 className="text-sm font-semibold tracking-normal">AI Answer Assistant</h1>
               <div className="flex items-center gap-2 text-xs text-slate-400">
                 {store.connection === "connected" ? <Wifi size={13} /> : <WifiOff size={13} />}
                 <span>{status}</span>

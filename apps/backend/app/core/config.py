@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "AI Interview Assistant"
+    app_name: str = "AI Answer Assistant"
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
     database_url: str = "sqlite+aiosqlite:///./data/interview_assistant.db"

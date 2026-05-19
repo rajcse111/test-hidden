@@ -4,6 +4,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class PromptContext:
     mode: str
+    current_question: str
     transcript: str
     screen_context: str | None = None
 
@@ -11,10 +12,14 @@ class PromptContext:
 class PromptBuilder:
     def build(self, context: PromptContext) -> list[dict[str, str]]:
         system = self._system_prompt(context.mode)
-        user_parts = ["Live interview transcript:", context.transcript.strip()]
+        user_parts = [f"Question:\n{context.current_question.strip()}"]
         if context.screen_context:
-            user_parts.extend(["Screen/OCR context:", context.screen_context.strip()])
-        user_parts.append("Respond with concise, high-signal guidance suitable for a live interview.")
+            user_parts.append(f"Screen context:\n{context.screen_context.strip()}")
+        # Include prior transcript only if it contains more than the current question
+        history = context.transcript.strip()
+        if history and history != context.current_question.strip():
+            user_parts.append(f"Transcript context (for background only):\n{history}")
+        user_parts.append("Provide a concise, high-signal answer.")
         return [
             {"role": "system", "content": system},
             {"role": "user", "content": "\n\n".join(part for part in user_parts if part)},

@@ -1,4 +1,4 @@
-# Code Review — AI Interview Assistant Overlay
+# Code Review — AI Answer Assistant Overlay
 
 **Reviewer:** Claude Code  
 **Date:** 2026-05-18  

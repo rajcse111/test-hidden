@@ -1,4 +1,4 @@
-# AI Interview Assistant — Desktop
+# AI Answer Assistant — Desktop
 
 A frameless, always-on-top Electron overlay that wraps the React UI for an interview-assistant. The overlay window is **excluded from screen-capture** on Windows 10 2004+ and macOS, so it's visible to you on your monitor but invisible to Zoom / Teams / Meet / OBS / Snipping Tool when you share your screen.
 
@@ -59,7 +59,7 @@ The capture-exclusion API is a Win32 / macOS / window-server API that operates o
 
 ### So where is "the Windows app"?
 
-It's `electron.exe` plus its bundled resources. In dev mode it lives in `node_modules\electron\dist\electron.exe`. When you eventually run `npm run package`, electron-builder bundles your compiled React renderer + the Electron runtime + an NSIS installer into `release\AI Interview Assistant Setup.exe` — that single `.exe` is the shippable Windows desktop application you'd send to another user. They double-click it, NSIS installs it under `%LOCALAPPDATA%\Programs\AI Interview Assistant\`, and they get a Start-menu entry that launches the protected overlay. No browser involved at any point on the end-user's machine.
+It's `electron.exe` plus its bundled resources. In dev mode it lives in `node_modules\electron\dist\electron.exe`. When you eventually run `npm run package`, electron-builder bundles your compiled React renderer + the Electron runtime + an NSIS installer into `release\AI Answer Assistant Setup.exe` — that single `.exe` is the shippable Windows desktop application you'd send to another user. They double-click it, NSIS installs it under `%LOCALAPPDATA%\Programs\AI Answer Assistant\`, and they get a Start-menu entry that launches the protected overlay. No browser involved at any point on the end-user's machine.
 
 ---
 
@@ -212,7 +212,7 @@ Renderer code calls these — they're defined in `electron/preload.ts` and handl
 | `onCaptureScreen(cb)` | main → renderer | Fired by `Ctrl+Shift+S` |
 | `onContentProtectionChange(cb)` | main → renderer | Fired by `Ctrl+Shift+P` |
 
-Settings persist between runs via `electron-store` (stored in `%APPDATA%\AI Interview Assistant\config.json` on Windows).
+Settings persist between runs via `electron-store` (stored in `%APPDATA%\AI Answer Assistant\config.json` on Windows).
 
 ### React renderer
 
@@ -282,7 +282,7 @@ Restart `npm run electron:dev` after changing env vars.
 npm run dev              # Vite renderer only — UI in browser at :5173 (no Electron, no overlay APIs)
 npm run electron:dev     # Compile Electron + launch the full overlay app
 npm run build            # Production build of renderer + Electron main
-npm run package          # Full build + electron-builder → release\AI Interview Assistant Setup.exe
+npm run package          # Full build + electron-builder → release\AI Answer Assistant Setup.exe
 npm run lint             # ESLint over src/ and electron/
 npm run test             # Vitest (jsdom + @testing-library/react)
 npm run preview          # Serve the production-built renderer for sanity check
@@ -310,7 +310,7 @@ You can also test with Windows Snipping Tool — press `Win+Shift+S`, drag a reg
 
 **The Electron window appears blank / white.** The renderer at `http://localhost:5173` isn't reachable. `npm run electron:dev` runs `electron:build` then launches Electron, but it doesn't start Vite for you — open a second terminal and run `npm run dev` first, then `npm run electron:dev` in the original terminal. If you want them combined, install `concurrently` and adjust the script.
 
-**The overlay shows up in screen shares.** Check (a) you're on Windows 10 build 19041+ — you are; (b) DWM/hardware composition is enabled (it always is on stock Windows 11); (c) you didn't press `Ctrl+Shift+P` and toggle protection off. The persisted state in `%APPDATA%\AI Interview Assistant\config.json` survives restarts, so if you toggled it off once it'll come back off.
+**The overlay shows up in screen shares.** Check (a) you're on Windows 10 build 19041+ — you are; (b) DWM/hardware composition is enabled (it always is on stock Windows 11); (c) you didn't press `Ctrl+Shift+P` and toggle protection off. The persisted state in `%APPDATA%\AI Answer Assistant\config.json` survives restarts, so if you toggled it off once it'll come back off.
 
 **"Cannot find module '@interview/shared'".** This folder used to be part of a monorepo. The shared types were inlined into `src/types/shared.ts`; the broken workspace deps were removed from `package.json`. If you see this error, you're probably looking at a pre-fix checkout — re-clone or re-pull.
 

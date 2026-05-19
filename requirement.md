@@ -1,4 +1,4 @@
-\# AI Interview Assistant Overlay Desktop Application
+\# AI Answer Assistant Overlay Desktop Application
 
 \## Production Grade Requirements Document
 

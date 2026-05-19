@@ -15,6 +15,7 @@ interface AssistantState {
   interimAudioText: string;
   answer: string;
   notes: string;
+  _generation: number;
   setSessionId: (sessionId: string) => void;
   setConnection: (connection: ConnectionState) => void;
   setListening: (listening: boolean) => void;
@@ -44,6 +45,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   interimAudioText: "",
   answer: "",
   notes: "",
+  _generation: 0,
   setSessionId: (sessionId) => set({ sessionId }),
   setConnection: (connection) => set({ connection }),
   setListening: (listening) => set({ listening }),
@@ -68,5 +70,5 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       answer: done ? state.answer : `${state.answer}${content}`,
     })),
   setNotes: (notes) => set({ notes }),
-  resetAnswer: () => set({ answer: "" }),
+  resetAnswer: () => set((state) => ({ answer: "", _generation: state._generation + 1 })),
 }));

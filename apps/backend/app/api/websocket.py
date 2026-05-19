@@ -136,6 +136,8 @@ async def _handle_transcript(
     if not clean:
         return generation_task
 
+    logger.info("question received | session={} preview={!r}", live.id, clean[:80])
+
     now = int(time() * 1000)
     segment = {
         "id": str(uuid4()),
@@ -154,9 +156,16 @@ async def _handle_transcript(
 
     transcript = live.append_transcript(clean, settings.transcript_context_segments)
     if generation_task and not generation_task.done():
+        logger.info("aborting previous generation | session={}", live.id)
         generation_task.cancel()
 
-    prompt = prompts.build(PromptContext(mode=live.mode, transcript=transcript, screen_context=live.screen_context))
+    prompt = prompts.build(PromptContext(
+        mode=live.mode,
+        current_question=clean,
+        transcript=transcript,
+        screen_context=live.screen_context,
+    ))
+    logger.info("starting generation | session={} provider={} model={}", live.id, live.provider, live.model)
     return asyncio.create_task(_stream_answer(websocket, llm, live, prompt))
 
 
@@ -171,10 +180,12 @@ async def _stream_answer(
             await websocket.send_json(
                 {"type": "assistant.delta", "delta": {"sessionId": live.id, "content": token, "done": False}}
             )
+        logger.info("generation complete | session={}", live.id)
         await websocket.send_json(
             {"type": "assistant.delta", "delta": {"sessionId": live.id, "content": "", "done": True}}
         )
     except asyncio.CancelledError:
+        logger.info("generation cancelled | session={}", live.id)
         await websocket.send_json(
             {
                 "type": "assistant.delta",
@@ -182,5 +193,5 @@ async def _stream_answer(
             }
         )
     except Exception as exc:
-        logger.exception("assistant stream failed")
+        logger.exception("generation failed | session={}", live.id)
         await websocket.send_json({"type": "assistant.error", "sessionId": live.id, "message": str(exc)})
