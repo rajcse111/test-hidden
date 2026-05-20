@@ -81,13 +81,15 @@ WScript.Sleep 1500
 ' ============================================================
 ' On Error Resume Next guards against any file that is still transitionally
 ' locked (edge case) — those files are silently skipped.
-Dim aFiles(4), sFile
+Dim aFiles(6), sFile
 
 aFiles(0) = sRoot & "\backend.log"
 aFiles(1) = sRoot & "\frontend.log"
 aFiles(2) = sRoot & "\ollama.log"
-aFiles(3) = sRoot & "\ollama_llama3_installed.flag"
-aFiles(4) = sRoot & "\temp_backend_start.bat"
+aFiles(3) = sRoot & "\ollama_llama3_2_3b.flag"
+aFiles(4) = sRoot & "\ollama_nomic_embed.flag"
+aFiles(5) = sRoot & "\.venv\rag_installed.flag"
+aFiles(6) = sRoot & "\temp_backend_start.bat"
 
 On Error Resume Next
 For Each sFile In aFiles

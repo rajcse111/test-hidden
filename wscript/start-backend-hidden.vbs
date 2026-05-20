@@ -41,6 +41,13 @@ bat.WriteLine "    .venv\Scripts\python.exe -m pip install -r apps\backend\requi
 bat.WriteLine "    echo installed > .venv\installed.flag"
 bat.WriteLine ")"
 
+bat.WriteLine "echo Checking RAG requirements... >> backend.log"
+bat.WriteLine "if not exist .venv\rag_installed.flag ("
+bat.WriteLine "    echo Installing RAG requirements... >> backend.log"
+bat.WriteLine "    .venv\Scripts\python.exe -m pip install -r local-rag\requirements.txt >> backend.log 2>&1"
+bat.WriteLine "    echo installed > .venv\rag_installed.flag"
+bat.WriteLine ")"
+
 ' IMPORTANT: Activate virtual environment
 bat.WriteLine "echo Activating virtual environment... >> backend.log"
 bat.WriteLine "call .venv\Scripts\activate.bat"
