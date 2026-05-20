@@ -18,6 +18,7 @@ from app.schemas import (
 )
 from app.services.llm import LlmOrchestrator
 from app.services.prompt_builder import PromptBuilder, PromptContext
+from app.services.rag_retriever import retrieve_chunks
 from app.services.session_manager import LiveSession
 from app.services.stt import AudioBuffer, WhisperService
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -243,13 +244,57 @@ async def _handle_transcript(
         logger.info("aborting previous generation | session={}", live.id)
         generation_task.cancel()
 
+    # RAG retrieval — runs in a thread executor so it doesn't block the event loop
+    # (embed_texts is a synchronous httpx call)
+    rag_store = getattr(websocket.app.state, "rag_store", None)
+    rag_context: str | None = None
+    citations: list[dict] = []
+
+    if rag_store is not None and settings.rag_enabled:
+        try:
+            loop = asyncio.get_event_loop()
+            chunks = await loop.run_in_executor(
+                None, retrieve_chunks, clean, rag_store, settings
+            )
+            if chunks:
+                # Build labeled context string for the prompt
+                context_parts = []
+                for i, chunk in enumerate(chunks, 1):
+                    context_parts.append(
+                        f"[{i}] Source: {chunk['source']}, Page: {chunk['page']}\n{chunk['text']}"
+                    )
+                rag_context = "\n\n---\n\n".join(context_parts)
+                citations = [
+                    {
+                        "source": c["source"],
+                        "page": c["page"],
+                        "snippet": c["text"][:200].replace("\n", " "),
+                        "distance": c["distance"],
+                    }
+                    for c in chunks
+                ]
+                logger.info(
+                    "RAG retrieval | session={} chunks={} top_distance={}",
+                    live.id, len(chunks), chunks[0]["distance"]
+                )
+                # Send citations before streaming so the frontend can render them
+                await websocket.send_json({
+                    "type": "assistant.citations",
+                    "sessionId": live.id,
+                    "citations": citations,
+                })
+        except Exception as exc:
+            logger.warning("RAG retrieval failed (falling back to direct LLM) | error={}", exc)
+
     prompt = prompts.build(PromptContext(
         mode=live.mode,
         current_question=clean,
         transcript=transcript,
         screen_context=live.screen_context,
+        rag_context=rag_context,
     ))
-    logger.info("starting generation | session={} provider={} model={}", live.id, live.provider, live.model)
+    logger.info("starting generation | session={} provider={} model={} rag={}",
+                live.id, live.provider, live.model, rag_context is not None)
     return asyncio.create_task(_stream_answer(websocket, llm, live, prompt))
 
 

@@ -66,8 +66,22 @@ export interface AssistantErrorMessage {
   message: string;
 }
 
+export interface Citation {
+  source: string;
+  page: string;
+  snippet: string;
+  distance: number;
+}
+
+export interface AssistantCitationsMessage {
+  type: "assistant.citations";
+  sessionId: string;
+  citations: Citation[];
+}
+
 export type ServerMessage =
   | SessionReadyMessage
   | TranscriptMessage
   | AssistantDeltaMessage
-  | AssistantErrorMessage;
+  | AssistantErrorMessage
+  | AssistantCitationsMessage;

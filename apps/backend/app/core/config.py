@@ -26,6 +26,18 @@ class Settings(BaseSettings):
     stt_partial_trigger_seconds: float = 2.0
     stt_partial_cooldown_seconds: float = 1.5
     log_level: str = "INFO"
+
+    # RAG — local-rag/ module integration
+    rag_enabled: bool = True
+    rag_chroma_path: str = "./local-rag/storage"
+    rag_collection_name: str = "documents"
+    rag_embed_model: str = "nomic-embed-text"
+    rag_llm_model: str = "llama3.1:8b"
+    rag_chunk_size: int = 800
+    rag_chunk_overlap: int = 120
+    rag_top_k: int = 4
+    rag_distance_threshold: float = 1.4
+    rag_temperature: float = 0.2
     cors_origins: list[str] = ["http://localhost:5173"]
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

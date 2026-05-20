@@ -19,10 +19,11 @@ import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 
 import { audioCapture } from "../services/audioCapture";
-import { runOcr } from "../services/backend";
+import { listDocuments, resetDocuments, runOcr, uploadDocument } from "../services/backend";
 import { interviewSocket } from "../services/interviewSocket";
 import { liveSpeech } from "../services/liveSpeech";
 import { useAssistantStore } from "../state/assistantStore";
+import type { Citation } from "../types/shared";
 
 const tabs = [
   ["audio", "Audio Input"],
@@ -43,6 +44,7 @@ export function App(): JSX.Element {
   const setListening = useAssistantStore((state) => state.setListening);
   const setInterimAudioText = useAssistantStore((state) => state.setInterimAudioText);
   const setBackendInterimText = useAssistantStore((state) => state.setBackendInterimText);
+  const setCitations = useAssistantStore((state) => state.setCitations);
   const sessionId = useAssistantStore((state) => state.sessionId);
   const listening = useAssistantStore((state) => state.listening);
   const [manualText, setManualText] = useState("");
@@ -69,6 +71,11 @@ export function App(): JSX.Element {
           setBackendInterimText(message.segment.text);
         }
       }
+      if (message.type === "assistant.citations") {
+        if (useAssistantStore.getState()._generation === generationRef.current) {
+          setCitations(message.citations);
+        }
+      }
       if (message.type === "assistant.delta") {
         if (useAssistantStore.getState()._generation === generationRef.current) {
           appendAnswer(message.delta.content, message.delta.done);
@@ -78,7 +85,7 @@ export function App(): JSX.Element {
     });
     interviewSocket.connect();
     return () => unsubscribe();
-  }, [addTranscript, appendAudioInputText, appendAnswer, setBackendInterimText, setConnection, setSessionId]);
+  }, [addTranscript, appendAudioInputText, appendAnswer, setCitations, setBackendInterimText, setConnection, setSessionId]);
 
   const startNewRequest = useCallback((sid: string, prompt: string) => {
     interviewSocket.send({ type: "assistant.cancel", sessionId: sid });
@@ -207,7 +214,7 @@ export function App(): JSX.Element {
           <AnimatePresence mode="wait">
             {store.activeTab === "audio" && <AudioInputPanel />}
             {store.activeTab === "transcript" && <TranscriptPanel />}
-            {store.activeTab === "answers" && <AnswerPanel answer={store.answer} />}
+            {store.activeTab === "answers" && <AnswerPanel answer={store.answer} citations={store.citations} />}
             {store.activeTab === "analysis" && <AnalysisPanel />}
             {store.activeTab === "notes" && <NotesPanel />}
             {store.activeTab === "settings" && <SettingsPanel />}
@@ -330,12 +337,39 @@ function TranscriptPanel(): JSX.Element {
   );
 }
 
-function AnswerPanel({ answer }: { answer: string }): JSX.Element {
+function AnswerPanel({ answer, citations }: { answer: string; citations: Citation[] }): JSX.Element {
+  const [showSources, setShowSources] = useState(false);
   return (
     <Panel>
       {answer ? (
-        <div className="prose prose-invert prose-sm max-w-none prose-pre:bg-black/40">
-          <ReactMarkdown rehypePlugins={[rehypeHighlight]}>{answer}</ReactMarkdown>
+        <div className="flex flex-col gap-3">
+          <div className="prose prose-invert prose-sm max-w-none prose-pre:bg-black/40">
+            <ReactMarkdown rehypePlugins={[rehypeHighlight]}>{answer}</ReactMarkdown>
+          </div>
+          {citations.length > 0 && (
+            <div className="rounded-md border border-white/10 bg-white/5">
+              <button
+                onClick={() => setShowSources((s) => !s)}
+                className="flex w-full items-center justify-between px-3 py-2 text-xs text-slate-400 hover:text-slate-200"
+              >
+                <span>📎 Sources ({citations.length})</span>
+                <span>{showSources ? "▲" : "▼"}</span>
+              </button>
+              {showSources && (
+                <div className="divide-y divide-white/5 px-3 pb-3">
+                  {citations.map((c, i) => (
+                    <div key={i} className="py-2 text-xs">
+                      <div className="font-semibold text-slate-300">
+                        {c.source} — page {c.page}{" "}
+                        <span className="font-normal text-slate-500">(dist: {c.distance})</span>
+                      </div>
+                      <div className="mt-1 text-slate-400 leading-5">{c.snippet}…</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <EmptyState icon={<Bot size={20} />} title="AI answer stream will appear here" />
@@ -376,9 +410,97 @@ function NotesPanel(): JSX.Element {
 }
 
 function SettingsPanel(): JSX.Element {
+  const [docInfo, setDocInfo] = useState<{ total_chunks: number; sources: string[] } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [docError, setDocError] = useState<string | null>(null);
+  const [docSuccess, setDocSuccess] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const refreshDocs = useCallback(async () => {
+    try {
+      const info = await listDocuments();
+      setDocInfo(info);
+    } catch {
+      setDocInfo(null);
+    }
+  }, []);
+
+  useEffect(() => { void refreshDocs(); }, [refreshDocs]);
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setDocError(null);
+    setDocSuccess(null);
+    try {
+      const result = await uploadDocument(file);
+      setDocSuccess(`${file.name}: +${result.chunks_added} chunk(s) added, ${result.chunks_skipped} already present.`);
+      await refreshDocs();
+    } catch (err) {
+      setDocError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleReset = async (): Promise<void> => {
+    if (!confirm("Delete all indexed documents? This cannot be undone.")) return;
+    try {
+      await resetDocuments();
+      setDocSuccess("Vector store cleared.");
+      await refreshDocs();
+    } catch (err) {
+      setDocError(err instanceof Error ? err.message : "Reset failed");
+    }
+  };
+
   return (
     <Panel>
       <div className="space-y-4">
+        {/* Document Upload */}
+        <div className="rounded-md border border-white/10 bg-white/5 p-3">
+          <div className="mb-3 text-xs font-semibold text-slate-100">📚 RAG Documents</div>
+          {docInfo ? (
+            <div className="mb-3 text-xs text-slate-400">
+              <span className="text-slate-200">{docInfo.total_chunks}</span> chunks indexed
+              {docInfo.sources.length > 0 && (
+                <div className="mt-1 space-y-0.5">
+                  {docInfo.sources.map((src) => (
+                    <div key={src} className="text-slate-500">• {src}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="mb-3 text-xs text-slate-500">RAG not available or no documents yet.</div>
+          )}
+          {docError && <div className="mb-2 rounded bg-red-500/15 px-2 py-1 text-xs text-red-300">{docError}</div>}
+          {docSuccess && <div className="mb-2 rounded bg-green-500/15 px-2 py-1 text-xs text-green-300">{docSuccess}</div>}
+          <div className="flex gap-2">
+            <label className="flex-1 cursor-pointer rounded-md border border-white/10 bg-black/20 px-3 py-2 text-center text-xs text-slate-300 hover:bg-white/5">
+              {uploading ? "Uploading…" : "Upload PDF / DOCX / XLSX"}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.docx,.xlsx"
+                className="hidden"
+                onChange={(e) => void handleFileChange(e)}
+                disabled={uploading}
+              />
+            </label>
+            {docInfo && docInfo.total_chunks > 0 && (
+              <button
+                onClick={() => void handleReset()}
+                className="rounded-md border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs text-red-300 hover:bg-red-500/20"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+        </div>
+
         <InfoRow label="Backend" value={import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8000"} />
         <InfoRow label="WebSocket" value={import.meta.env.VITE_WS_URL ?? "ws://localhost:8000/ws/interview"} />
         <div className="rounded-md border border-white/10 bg-white/5 p-3 text-xs text-slate-300">

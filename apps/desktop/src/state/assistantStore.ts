@@ -1,4 +1,4 @@
-import type { OverlayMode, TranscriptSegment } from "../types/shared";
+import type { Citation, OverlayMode, TranscriptSegment } from "../types/shared";
 import { create } from "zustand";
 
 type ConnectionState = "disconnected" | "connecting" | "connected";
@@ -15,6 +15,7 @@ interface AssistantState {
   interimAudioText: string;
   backendInterimText: string;
   answer: string;
+  citations: Citation[];
   notes: string;
   _generation: number;
   setSessionId: (sessionId: string) => void;
@@ -31,6 +32,7 @@ interface AssistantState {
   setBackendInterimText: (text: string) => void;
   resetAudioInput: () => void;
   appendAnswer: (content: string, done: boolean) => void;
+  setCitations: (citations: Citation[]) => void;
   setNotes: (notes: string) => void;
   resetAnswer: () => void;
 }
@@ -47,6 +49,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   interimAudioText: "",
   backendInterimText: "",
   answer: "",
+  citations: [],
   notes: "",
   _generation: 0,
   setSessionId: (sessionId) => set({ sessionId }),
@@ -73,6 +76,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     set((state) => ({
       answer: done ? state.answer : `${state.answer}${content}`,
     })),
+  setCitations: (citations) => set({ citations }),
   setNotes: (notes) => set({ notes }),
-  resetAnswer: () => set((state) => ({ answer: "", _generation: state._generation + 1 })),
+  resetAnswer: () => set((state) => ({ answer: "", citations: [], _generation: state._generation + 1 })),
 }));

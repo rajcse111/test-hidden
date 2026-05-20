@@ -18,6 +18,13 @@ export interface AssistantDelta {
   done: boolean;
 }
 
+export interface Citation {
+  source: string;
+  page: string;
+  snippet: string;
+  distance: number;
+}
+
 export type ClientMessage =
   | { type: "audio.chunk"; sessionId: string; payloadBase64: string; sampleRate: number; channels: number }
   | { type: "transcript.manual"; sessionId: string; text: string }
@@ -29,6 +36,7 @@ export type ServerMessage =
   | { type: "transcript.partial"; segment: TranscriptSegment }
   | { type: "transcript.final"; segment: TranscriptSegment }
   | { type: "assistant.delta"; delta: AssistantDelta }
+  | { type: "assistant.citations"; sessionId: string; citations: Citation[] }
   | { type: "assistant.error"; sessionId: string; message: string }
   | { type: "pong"; at: string };
 

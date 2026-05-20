@@ -7,11 +7,22 @@ class PromptContext:
     current_question: str
     transcript: str
     screen_context: str | None = None
+    rag_context: str | None = None  # labeled document excerpts from RAG retrieval
+
+
+_RAG_SYSTEM_ADDENDUM = """
+
+You have been provided with relevant document excerpts below. When answering:
+1. Ground your answer in these excerpts and cite them as [filename, page].
+2. If the excerpts do not contain enough information, say so and then answer from general knowledge.
+
+Document excerpts:
+{rag_context}"""
 
 
 class PromptBuilder:
     def build(self, context: PromptContext) -> list[dict[str, str]]:
-        system = self._system_prompt(context.mode)
+        system = self._system_prompt(context.mode, context.rag_context)
         user_parts = [f"Question:\n{context.current_question.strip()}"]
         if context.screen_context:
             user_parts.append(f"Screen context:\n{context.screen_context.strip()}")
@@ -25,7 +36,7 @@ class PromptBuilder:
             {"role": "user", "content": "\n\n".join(part for part in user_parts if part)},
         ]
 
-    def _system_prompt(self, mode: str) -> str:
+    def _system_prompt(self, mode: str, rag_context: str | None = None) -> str:
         prompts = {
             "interview": (
                 "You are a discreet interview coach. Give concise answer drafts, STAR framing when useful, "
@@ -40,5 +51,8 @@ class PromptBuilder:
                 "scaling bottlenecks, reliability, tradeoffs, and crisp diagrams described in text."
             ),
         }
-        return prompts.get(mode, prompts["interview"])
+        base = prompts.get(mode, prompts["interview"])
+        if rag_context:
+            base += _RAG_SYSTEM_ADDENDUM.format(rag_context=rag_context)
+        return base
 
