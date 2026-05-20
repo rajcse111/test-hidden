@@ -7,11 +7,28 @@ mixing models would produce incomparable vectors.
 
 Batching: Ollama's /api/embed accepts a list of strings, so we send all
 texts in one HTTP round-trip rather than one request per chunk.
+
+Performance notes:
+- A module-level httpx.Client is reused across calls to avoid TCP setup
+  overhead on every embed request (~5-15 ms per new connection).
+- embed_query results are LRU-cached (32 entries) so identical queries
+  skip the ~200 ms network round-trip entirely.
 """
 
+from functools import lru_cache
 from typing import Sequence
 
 import httpx
+
+# Persistent client — reused across all embed calls to avoid TCP setup cost.
+_http_client: httpx.Client | None = None
+
+
+def _get_http_client() -> httpx.Client:
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.Client(timeout=120.0)
+    return _http_client
 
 
 def embed_texts(texts: Sequence[str], model: str, ollama_host: str) -> list[list[float]]:
@@ -33,10 +50,9 @@ def embed_texts(texts: Sequence[str], model: str, ollama_host: str) -> list[list
 
     url = f"{ollama_host.rstrip('/')}/api/embed"
     try:
-        response = httpx.post(
+        response = _get_http_client().post(
             url,
             json={"model": model, "input": list(texts)},
-            timeout=120.0,  # embedding large batches can be slow on CPU
         )
         response.raise_for_status()
     except httpx.ConnectError:
@@ -63,7 +79,18 @@ def embed_texts(texts: Sequence[str], model: str, ollama_host: str) -> list[list
     return embeddings
 
 
-def embed_query(text: str, model: str, ollama_host: str) -> list[float]:
-    """Embed a single query string — convenience wrapper around embed_texts."""
+@lru_cache(maxsize=32)
+def _embed_query_cached(text: str, model: str, ollama_host: str) -> tuple[float, ...]:
+    """Cached embed for a single query string.
+
+    Returns a tuple (hashable) so lru_cache can store it. Repeated questions
+    — common in testing or follow-up queries — skip the ~200 ms embed call.
+    Cache key includes model and host so changing either busts the cache.
+    """
     vectors = embed_texts([text], model, ollama_host)
-    return vectors[0]
+    return tuple(vectors[0])
+
+
+def embed_query(text: str, model: str, ollama_host: str) -> list[float]:
+    """Embed a single query string — cached convenience wrapper around embed_texts."""
+    return list(_embed_query_cached(text, model, ollama_host))

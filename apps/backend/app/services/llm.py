@@ -47,7 +47,11 @@ class OpenRouterProvider(LlmProvider):
 class OllamaProvider(LlmProvider):
     def __init__(self, host: str):
         self.host = host.rstrip("/")
-        self._client = httpx.AsyncClient(timeout=None)
+        # read=None keeps streaming alive indefinitely; connect/write/pool timeouts
+        # surface a fast error when Ollama is unreachable instead of hanging forever.
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=5.0, read=None, write=5.0, pool=5.0)
+        )
 
     async def stream(self, messages: list[dict[str, str]], model: str) -> AsyncIterator[str]:
         payload = {

@@ -12,6 +12,11 @@ the caller can display source attributions alongside the streamed answer.
 from collections.abc import Iterator
 from typing import Any
 
+try:
+    import ollama
+except ImportError:
+    ollama = None  # type: ignore[assignment]
+
 from rag_core.config import RAGSettings, get_settings
 from rag_core.prompt import build_citations, build_messages
 from rag_core.retriever import retrieve
@@ -57,9 +62,7 @@ def _stream_ollama(
 
     Uses the official ollama Python client which handles SSE parsing.
     """
-    try:
-        import ollama
-    except ImportError:
+    if ollama is None:
         raise ImportError("Run: pip install ollama")
 
     try:
@@ -67,7 +70,11 @@ def _stream_ollama(
             model=settings.llm_model,
             messages=messages,
             stream=True,
-            options={"temperature": settings.temperature},
+            options={
+                "temperature": settings.temperature,
+                "keep_alive": -1,   # keep model in memory; prevents 2-5 s reload after idle
+                "num_predict": 400, # consistent cap; avoids runaway generation
+            },
         )
         for chunk in stream:
             token = chunk["message"]["content"]
