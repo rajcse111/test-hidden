@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 # Insert local-rag into the import path at module load time.
 # This module is imported during app startup so the path is set before
 # any RAG function is called.
-_local_rag_path = Path(__file__).parents[3] / "local-rag"
+_local_rag_path = Path(__file__).parents[4] / "local-rag"
 if str(_local_rag_path) not in sys.path:
     sys.path.insert(0, str(_local_rag_path))
 
