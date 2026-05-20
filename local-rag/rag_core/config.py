@@ -18,8 +18,8 @@ class RAGSettings(BaseSettings):
     llm_model: str = "llama3.1:8b"
     embed_model: str = "nomic-embed-text"
 
-    # ChromaDB persistence directory (relative to CWD when CLI/web is run)
-    chroma_path: str = "./storage"
+    # ChromaDB persistence directory — defaults to local-rag/storage/ next to this package
+    chroma_path: str = str(Path(__file__).parent.parent / "storage")
     collection_name: str = "documents"
 
     # Chunking
