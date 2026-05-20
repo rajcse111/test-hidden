@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from loguru import logger
+
 if TYPE_CHECKING:
     from app.core.config import Settings
 
@@ -70,21 +72,28 @@ def make_vector_store(settings: "Settings") -> "VectorStore | None":
 
 def retrieve_chunks(
     question: str,
-    store: Any,
+    store: Any,  # kept for API compatibility; a fresh store is created per call
     settings: "Settings",
 ) -> list[dict[str, Any]]:
     """Retrieve top-k chunks for a question.
 
-    Returns an empty list if RAG is unavailable or the store is empty.
-    The returned list contains dicts with: text, source, page, distance.
+    Returns an empty list if RAG is unavailable or no chunks pass the distance threshold.
+    Creates a fresh VectorStore on every call so that documents ingested by other
+    processes (e.g. Streamlit) are always visible — avoids stale in-memory HNSW index.
     """
-    if not _RAG_AVAILABLE or store is None:
+    if not _RAG_AVAILABLE:
         return []
     rag_settings = make_rag_settings(settings)
     if rag_settings is None:
         return []
+    fresh_store = make_vector_store(settings)
+    if fresh_store is None:
+        return []
     try:
-        chunks = _retrieve(question, store, rag_settings)
+        chunks = _retrieve(question, fresh_store, rag_settings)
+        if not chunks:
+            logger.debug("RAG: no chunks above distance threshold | question={!r}", question[:60])
+            return []
         return [
             {
                 "text": c.text,
@@ -94,7 +103,8 @@ def retrieve_chunks(
             }
             for c in chunks
         ]
-    except Exception:
+    except Exception as exc:
+        logger.warning("RAG retrieve_chunks failed | error={}", exc)
         return []
 
 

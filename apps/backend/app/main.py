@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,7 +37,8 @@ async def lifespan(app: FastAPI):
         try:
             app.state.rag_store = make_vector_store(settings)
             count = app.state.rag_store.count() if app.state.rag_store else 0
-            logger.info("RAG store initialised | chunks={} path={}", count, settings.rag_chroma_path)
+            resolved_path = Path(settings.rag_chroma_path).expanduser().resolve()
+            logger.info("RAG store initialised | chunks={} path={}", count, resolved_path)
         except Exception as exc:
             logger.warning("RAG store init failed (continuing without RAG) | error={}", exc)
             app.state.rag_store = None

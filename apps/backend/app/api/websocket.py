@@ -18,6 +18,7 @@ from app.schemas import (
 )
 from app.services.llm import LlmOrchestrator
 from app.services.prompt_builder import PromptBuilder, PromptContext
+from app.services.rag_retriever import is_available as rag_available
 from app.services.rag_retriever import retrieve_chunks
 from app.services.session_manager import LiveSession
 from app.services.stt import AudioBuffer, WhisperService
@@ -245,16 +246,16 @@ async def _handle_transcript(
         generation_task.cancel()
 
     # RAG retrieval — runs in a thread executor so it doesn't block the event loop
-    # (embed_texts is a synchronous httpx call)
-    rag_store = getattr(websocket.app.state, "rag_store", None)
+    # (embed_texts is a synchronous httpx call; retrieve_chunks creates a fresh
+    # VectorStore per call to pick up documents ingested by any process)
     rag_context: str | None = None
     citations: list[dict] = []
 
-    if rag_store is not None and settings.rag_enabled:
+    if settings.rag_enabled and rag_available():
         try:
             loop = asyncio.get_event_loop()
             chunks = await loop.run_in_executor(
-                None, retrieve_chunks, clean, rag_store, settings
+                None, retrieve_chunks, clean, None, settings
             )
             if chunks:
                 # Build labeled context string for the prompt

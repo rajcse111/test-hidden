@@ -14,7 +14,7 @@ _RAG_SYSTEM_ADDENDUM = """
 
 You have been provided with relevant document excerpts below. When answering:
 1. Ground your answer in these excerpts and cite them as [filename, page].
-2. If the excerpts do not contain enough information, say so and then answer from general knowledge.
+2. If the excerpts do not contain enough information, say so explicitly — do not answer from general knowledge.
 
 Document excerpts:
 {rag_context}"""
