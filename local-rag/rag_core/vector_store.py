@@ -86,6 +86,7 @@ class VectorStore:
         self,
         query_embedding: list[float],
         k: int = 4,
+        keyword_filter: str | None = None,
     ) -> list[RetrievedChunk]:
         """Return the k most similar chunks to the query embedding.
 
@@ -93,6 +94,9 @@ class VectorStore:
             query_embedding: Vector produced by embed_query().
             k: Maximum number of results.  Actual results may be fewer if
                the collection has fewer than k chunks.
+            keyword_filter: When set, only chunks whose text contains this
+                exact substring are considered before semantic ranking.
+                Pass None for pure semantic search (the fallback path).
 
         Returns:
             List of RetrievedChunk sorted by ascending distance (best first).
@@ -100,11 +104,14 @@ class VectorStore:
         n = min(k, self.count())
         if n == 0:
             return []
-        results = self._collection.query(
-            query_embeddings=[query_embedding],
-            n_results=n,
-            include=["documents", "metadatas", "distances"],
-        )
+        kwargs: dict = {
+            "query_embeddings": [query_embedding],
+            "n_results": n,
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if keyword_filter:
+            kwargs["where_document"] = {"$contains": keyword_filter}
+        results = self._collection.query(**kwargs)
         chunks: list[RetrievedChunk] = []
         docs = results["documents"][0]
         metas = results["metadatas"][0]
