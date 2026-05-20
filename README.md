@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/license-MIT-placeholder)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-placeholder)
 
-A production-oriented desktop AI assistant for live interviews. It combines an Electron transparent overlay, real-time microphone streaming, FastAPI WebSockets, Whisper transcription, OCR screen context, and streaming LLM answers through OpenAI, Gemini, OpenRouter, or local Ollama.
+A production-oriented desktop AI assistant for live interviews. It combines an Electron transparent overlay, real-time microphone streaming, FastAPI WebSockets, Whisper transcription, OCR screen context, streaming LLM answers, and a fully-local RAG pipeline that grounds answers in your own documents.
 
 > Screenshot placeholders  
 > `docs/screenshots/overlay-expanded.png`  
@@ -21,6 +21,7 @@ A production-oriented desktop AI assistant for live interviews. It combines an E
 - OpenAI, Gemini, OpenRouter, and Ollama provider abstraction
 - Local-first mode with Ollama and local Whisper
 - OCR screen-context capture via Electron `desktopCapturer` and Tesseract
+- **RAG (Retrieval-Augmented Generation):** upload PDF, DOCX, or XLSX files and receive answers grounded in your documents with inline citations
 - Secure Electron preload with `contextIsolation`, sandboxing, and disabled renderer Node access
 - Optional shared-secret auth for REST and WebSocket traffic
 - SQLite persistence for sessions, transcripts, settings, and prompts
@@ -58,8 +59,25 @@ flowchart LR
   Overlay <--> WS
   WS --> STT --> Prompt --> LLM
   OCR --> Prompt
+  RAG --> Prompt
   LLM --> Providers
   Backend --> DB
+```
+
+**RAG pipeline (when documents are indexed):**
+
+```
+Document upload (PDF/DOCX/XLSX)
+  └─ loaders   → raw text + metadata (source, page)
+  └─ chunker   → overlapping ~800-char chunks
+  └─ embeddings → float vectors via nomic-embed-text (Ollama)
+  └─ ChromaDB  → persisted to local-rag/storage/
+
+Question (audio or typed)
+  └─ embeddings → query vector (same model)
+  └─ ChromaDB  → top-k nearest chunks (cosine similarity)
+  └─ prompt    → system prompt + labeled excerpts injected
+  └─ Ollama    → streaming answer with [source, page] citations
 ```
 
 ## Tech Stack
@@ -68,6 +86,7 @@ flowchart LR
 - Backend: Python 3.11, FastAPI, WebSockets, Pydantic, AsyncIO, SQLAlchemy
 - AI: OpenAI SDK, Gemini REST, OpenRouter, Ollama
 - STT/OCR: faster-whisper, Tesseract OCR
+- RAG: ChromaDB, nomic-embed-text, LangChain text splitters, pdfplumber, python-docx, pandas
 - Testing: Vitest, Playwright-ready config, Pytest
 - Packaging: Electron Builder, Docker Compose
 
@@ -79,28 +98,34 @@ Requirements:
 - Python 3.11+
 - Tesseract OCR
 - FFmpeg
-- Optional: Ollama for local LLM mode
+- Ollama — [https://ollama.com](https://ollama.com) (required for RAG and local LLM mode)
 
-Windows setup:
+**Windows one-shot setup:**
 
 ```powershell
 .\scripts\setup.ps1
 ```
 
-Manual setup:
+**Manual setup:**
 
 ```powershell
 npm install
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r apps\backend\requirements.txt
+python -m pip install -r apps\backend\requirements.txt
 copy .env.example .env
 ```
 
 For deterministic backend installs, use the generated lock file:
 
 ```powershell
-pip install -r apps\backend\requirements.lock
+python -m pip install -r apps\backend\requirements.lock
+```
+
+**RAG dependencies** (install once after the above):
+
+```powershell
+python -m pip install -r local-rag\requirements.txt
 ```
 
 ## Development Setup
@@ -149,12 +174,19 @@ Important endpoints:
 - `POST /api/ocr`
 - `POST /api/session/start`
 - `POST /api/session/end`
+- `POST /api/documents/upload` — ingest a document file into the RAG store
+- `GET /api/documents` — list indexed files and chunk count
+- `POST /api/documents/reset` — clear the RAG vector store
 - `WS /ws/interview`
 
 Run tests:
 
-```bash
-pytest apps/backend/tests
+```powershell
+# Backend tests
+.venv\Scripts\python.exe -m pytest apps\backend\tests -v
+
+# RAG tests (no Ollama required — uses mocks)
+.venv\Scripts\python.exe -m pytest local-rag\tests\ -v
 ```
 
 ## Frontend Setup
@@ -185,20 +217,118 @@ Supported values include `tiny`, `base`, `medium`, and `large-v3`. Larger models
 
 ## Ollama Setup
 
-Install Ollama, then pull a model:
+Install Ollama from [https://ollama.com](https://ollama.com), then pull the required models:
 
-```bash
-ollama pull llama3
+```powershell
+# LLM for answers (interview assistant + RAG generation)
+ollama pull llama3.1:8b
+
+# Embedding model for RAG (must match the model used at index time)
+ollama pull nomic-embed-text
+
+# Start the Ollama server (runs in background after install on most systems)
 ollama serve
 ```
 
-Set:
+**On 16 GB RAM (CPU-only):** `llama3.1:8b` works but generation takes 30–60 s per answer.  
+Use `llama3.2:3b` for faster responses: set `RAG_LLM_MODEL=llama3.2:3b` in `.env`.
+
+Set in `.env` for local-only mode:
 
 ```env
 DEFAULT_PROVIDER=ollama
-DEFAULT_MODEL=llama3
-OLLAMA_HOST=http://localhost:11435
+DEFAULT_MODEL=llama3.1:8b
+OLLAMA_HOST=http://localhost:11434
 LOCAL_ONLY=true
+```
+
+## RAG Setup
+
+RAG lets you upload your own documents and receive answers grounded in them with source citations. The vector store persists to `local-rag/storage/` automatically — no separate database needed.
+
+### 1. Install RAG dependencies
+
+```powershell
+python -m pip install -r local-rag\requirements.txt
+```
+
+### 2. Pull Ollama embedding model
+
+```powershell
+ollama pull nomic-embed-text
+```
+
+### 3. Ingest documents
+
+**Via CLI:**
+
+```powershell
+# Ingest a single file
+.venv\Scripts\python.exe local-rag\cli.py ingest path\to\your\document.pdf
+
+# Ingest an entire folder (PDF, DOCX, XLSX, TXT, MD)
+.venv\Scripts\python.exe local-rag\cli.py ingest path\to\your\documents\
+
+# Check what's indexed
+.venv\Scripts\python.exe local-rag\cli.py status
+
+# Clear all indexed documents
+.venv\Scripts\python.exe local-rag\cli.py reset
+```
+
+**Via Streamlit web UI** (standalone, separate from the Electron app):
+
+```powershell
+.venv\Scripts\python.exe -m streamlit run local-rag\web.py
+```
+
+Opens at `http://localhost:8501`. Upload files from the sidebar, chat in the main area, expand "Sources" to inspect retrieved chunks.
+
+**Via Electron app Settings tab:**
+
+With the backend running, open the Settings tab in the overlay, upload a file using the "Upload PDF / DOCX / XLSX" button, and start asking questions.
+
+### 4. Ask questions
+
+Once documents are indexed, every question asked in the overlay (audio or typed) is automatically answered from your documents with citations. If no relevant chunks are found, the assistant falls back to direct LLM knowledge.
+
+Example answer with citations:
+```
+What is RAG?
+
+RAG (Retrieval-Augmented Generation) is an AI pattern that grounds large language model
+answers in retrieved documents [sample.md, page 1]. It reduces hallucinations and enables
+citable answers without retraining the model [sample.md, page 1].
+```
+
+### RAG configuration (`.env`)
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `RAG_ENABLED` | `true` | Set `false` to disable RAG without removing packages |
+| `RAG_CHROMA_PATH` | `./local-rag/storage` | ChromaDB persistence directory |
+| `RAG_COLLECTION_NAME` | `documents` | ChromaDB collection name |
+| `RAG_EMBED_MODEL` | `nomic-embed-text` | Ollama embedding model (must match at ingest + query time) |
+| `RAG_LLM_MODEL` | `llama3.1:8b` | Ollama model for RAG generation |
+| `RAG_CHUNK_SIZE` | `800` | Target chars per chunk (~200 tokens) |
+| `RAG_CHUNK_OVERLAP` | `120` | Overlap chars between chunks |
+| `RAG_TOP_K` | `4` | Chunks retrieved per query |
+| `RAG_DISTANCE_THRESHOLD` | `1.4` | Cosine distance cutoff (0=identical, 2=opposite) |
+| `RAG_TEMPERATURE` | `0.2` | LLM temperature for RAG answers (low = grounded) |
+
+### RAG API endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/documents/upload` | Upload and ingest a file (multipart form) |
+| `GET` | `/api/documents` | List indexed filenames and total chunk count |
+| `POST` | `/api/documents/reset` | Delete all indexed documents |
+
+### RAG tests
+
+```powershell
+# Run RAG unit tests (mocks Ollama — no server required)
+.venv\Scripts\python.exe -m pytest local-rag\tests\ -v
 ```
 
 ## Docker Setup
@@ -235,31 +365,56 @@ Targets:
 
 ## Environment Variables
 
-| Variable | Purpose |
-| --- | --- |
-| `OPENAI_API_KEY` | OpenAI API key |
-| `GEMINI_API_KEY` | Gemini API key |
-| `OPENROUTER_API_KEY` | OpenRouter API key |
-| `OLLAMA_HOST` | Ollama base URL |
-| `DEFAULT_PROVIDER` | `openai`, `gemini`, `openrouter`, or `ollama` |
-| `DEFAULT_MODEL` | Default model id |
-| `WHISPER_MODEL` | faster-whisper model size |
-| `LOCAL_ONLY` | Blocks cloud providers when true |
-| `TRANSCRIPT_PERSISTENCE` | Stores transcripts in SQLite when true |
-| `TRANSCRIPT_CONTEXT_SEGMENTS` | Number of transcript segments retained in prompt context |
-| `INTERVIEW_AUTH_TOKEN` | Optional backend shared secret for REST/WebSocket access |
-| `PRELOAD_WHISPER_MODEL` | Eagerly loads Whisper at startup when true |
-| `VITE_BACKEND_URL` | Renderer REST backend URL |
-| `VITE_WS_URL` | Renderer WebSocket URL |
-| `VITE_BACKEND_TOKEN` | Renderer token matching `INTERVIEW_AUTH_TOKEN` |
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | — | OpenAI API key |
+| `GEMINI_API_KEY` | — | Gemini API key |
+| `OPENROUTER_API_KEY` | — | OpenRouter API key |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama base URL |
+| `DEFAULT_PROVIDER` | `ollama` | `openai`, `gemini`, `openrouter`, or `ollama` |
+| `DEFAULT_MODEL` | `llama3` | Default model id |
+| `WHISPER_MODEL` | `base` | faster-whisper model size (`tiny`/`base`/`medium`/`large-v3`) |
+| `LOCAL_ONLY` | `false` | Blocks cloud providers when `true` |
+| `TRANSCRIPT_PERSISTENCE` | `false` | Stores transcripts in SQLite when `true` |
+| `TRANSCRIPT_CONTEXT_SEGMENTS` | `60` | Rolling transcript window fed into prompts |
+| `INTERVIEW_AUTH_TOKEN` | — | Optional backend shared secret for REST/WebSocket access |
+| `PRELOAD_WHISPER_MODEL` | `false` | Eagerly loads Whisper at startup |
+| `STT_SILENCE_FRAMES` | `2` | Trailing silence frames before utterance flush (×250 ms each) |
+| `STT_PARTIAL_TRIGGER_SECONDS` | `2.0` | Speech duration before mid-utterance partial transcription fires |
+| `STT_PARTIAL_COOLDOWN_SECONDS` | `1.5` | Minimum gap between consecutive partial transcriptions |
+| `RAG_ENABLED` | `true` | Enable/disable RAG retrieval |
+| `RAG_CHROMA_PATH` | `./local-rag/storage` | ChromaDB persistence directory |
+| `RAG_COLLECTION_NAME` | `documents` | ChromaDB collection name |
+| `RAG_EMBED_MODEL` | `nomic-embed-text` | Ollama embedding model |
+| `RAG_LLM_MODEL` | `llama3.1:8b` | Ollama model for RAG generation |
+| `RAG_CHUNK_SIZE` | `800` | Target chars per chunk |
+| `RAG_CHUNK_OVERLAP` | `120` | Overlap chars between chunks |
+| `RAG_TOP_K` | `4` | Chunks retrieved per query |
+| `RAG_DISTANCE_THRESHOLD` | `1.4` | Cosine distance cutoff (chunks above this are dropped) |
+| `RAG_TEMPERATURE` | `0.2` | LLM temperature for RAG answers |
+| `VITE_BACKEND_URL` | `http://localhost:8000` | Renderer REST backend URL |
+| `VITE_WS_URL` | `ws://localhost:8000/ws/interview` | Renderer WebSocket URL |
+| `VITE_BACKEND_TOKEN` | — | Renderer token matching `INTERVIEW_AUTH_TOKEN` |
 
 ## Troubleshooting
 
+**General**
 - Microphone permission denied: allow microphone access for the Electron app in OS privacy settings.
-- Ollama connection fails: confirm `ollama serve` is running and `OLLAMA_HOST` is correct.
-- Whisper is slow: use `tiny` or `base`, close other CPU-heavy apps, or run on a GPU-enabled machine after adjusting the Whisper service.
-- OCR returns empty text: install Tesseract and verify it is available on `PATH`.
+- Ollama connection fails: confirm `ollama serve` is running and `OLLAMA_HOST` in `.env` matches.
+- Whisper is slow: use `tiny` or `base`, close other CPU-heavy apps, or run on a GPU-enabled machine.
+- OCR returns empty text: install Tesseract and verify it is on `PATH`.
 - Overlay cannot be clicked: press `Ctrl/Cmd+Shift+X` to disable click-through.
+
+**RAG**
+- Answers not grounded in documents → check ingestion ran: `python local-rag/cli.py status` must show > 0 chunks.
+- `Cannot reach Ollama` during ingest or query → run `ollama serve` and confirm `OLLAMA_HOST` is correct.
+- `Model not found` during embed → run `ollama pull nomic-embed-text`.
+- `Model not found` during generation → run `ollama pull llama3.1:8b`.
+- RAG disabled (Settings tab shows "not available") → install deps: `python -m pip install -r local-rag\requirements.txt` and ensure `RAG_ENABLED=true` in `.env`.
+- Answers seem generic (not from documents) → lower `RAG_DISTANCE_THRESHOLD` in `.env` (e.g. `1.2`) to tighten relevance filtering; check that ingestion printed added chunks.
+- Slow responses on 16 GB RAM → set `RAG_LLM_MODEL=llama3.2:3b` and `RAG_TOP_K=2` in `.env`.
+- Excel rows not matching → rename columns in Excel before ingesting; the loader serialises each row as `"Sheet <name> | ColName: val"` so generic column names (`A`, `B`) embed poorly.
+- Empty PDF text (scanned PDF) → scanned PDFs contain images, not text. Use a native-text PDF or export to DOCX. OCR ingestion is out of scope for Phase 1.
 
 ## Security Considerations
 
