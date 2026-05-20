@@ -52,6 +52,22 @@ def _extract_keyword(question: str) -> str | None:
     return " ".join(content)
 
 
+def _keyword_variants(keyword: str) -> list[str]:
+    """Return deduplicated case variants of keyword to try with $contains.
+
+    ChromaDB's $contains is case-sensitive, so "java memory model" won't match
+    a chunk that stores "Java Memory Model". Trying multiple variants (original,
+    lowercase, title-case, uppercase) covers most real-world document styles.
+    """
+    seen: set[str] = set()
+    variants: list[str] = []
+    for variant in [keyword, keyword.lower(), keyword.title(), keyword.upper()]:
+        if variant not in seen:
+            seen.add(variant)
+            variants.append(variant)
+    return variants
+
+
 def retrieve(
     question: str,
     store: VectorStore,
@@ -77,15 +93,20 @@ def retrieve(
 
     # Keyword-gated semantic search: restrict candidates to chunks containing
     # the topic phrase, then rank by cosine distance within that set.
+    # Multiple case variants are tried because $contains is case-sensitive and
+    # users may type queries in any case while documents use title/upper case.
     keyword = _extract_keyword(question)
     raw: list[RetrievedChunk] = []
     if keyword:
-        try:
-            raw = store.query(query_vector, k=settings.top_k, keyword_filter=keyword)
-        except Exception:
-            raw = []
-    # Fallback to pure semantic when keyword filter returns nothing or question
-    # has no extractable content words.
+        for variant in _keyword_variants(keyword):
+            try:
+                raw = store.query(query_vector, k=settings.top_k, keyword_filter=variant)
+            except Exception:
+                raw = []
+            if raw:
+                break
+    # Fallback to pure semantic when all keyword variants returned nothing or
+    # the question had no extractable content words.
     if not raw:
         raw = store.query(query_vector, k=settings.top_k)
 
