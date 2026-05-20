@@ -15,7 +15,7 @@ class RAGSettings(BaseSettings):
     ollama_host: str = "http://localhost:11434"
 
     # Models
-    llm_model: str = "llama3.1:8b"
+    llm_model: str = "llama3.2:3b"
     embed_model: str = "nomic-embed-text"
 
     # ChromaDB persistence directory — defaults to local-rag/storage/ next to this package
@@ -30,12 +30,13 @@ class RAGSettings(BaseSettings):
     top_k: int = 4
     # Cosine distance threshold: ChromaDB returns distance (0=identical, 2=opposite).
     # Chunks above this distance are too dissimilar and are dropped.
-    retrieval_distance_threshold: float = 1.4
+    distance_threshold: float = 1.4
 
     # Generation
     temperature: float = 0.2
 
     model_config = SettingsConfigDict(
+        env_prefix="RAG_",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",

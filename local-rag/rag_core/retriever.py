@@ -24,12 +24,12 @@ def retrieve(
     Args:
         question: The user's natural-language query.
         store: Initialised VectorStore instance.
-        settings: RAGSettings (uses top_k, retrieval_distance_threshold,
+        settings: RAGSettings (uses top_k, distance_threshold,
                   embed_model, ollama_host).
 
     Returns:
         List of RetrievedChunk sorted by ascending distance (best first),
-        filtered to distance <= retrieval_distance_threshold.
+        filtered to distance <= distance_threshold.
         Empty list when no documents are ingested or nothing is relevant.
     """
     if store.count() == 0:
@@ -39,5 +39,5 @@ def retrieve(
     raw = store.query(query_vector, k=settings.top_k)
 
     # Apply distance threshold — drop anything too dissimilar
-    filtered = [c for c in raw if c.distance <= settings.retrieval_distance_threshold]
+    filtered = [c for c in raw if c.distance <= settings.distance_threshold]
     return filtered

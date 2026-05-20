@@ -47,7 +47,7 @@ def make_settings(tmp_path: Path) -> RAGSettings:
         chunk_size=500,
         chunk_overlap=50,
         top_k=3,
-        retrieval_distance_threshold=2.0,  # wide threshold for test stability
+        distance_threshold=2.0,  # wide threshold for test stability
     )
 
 

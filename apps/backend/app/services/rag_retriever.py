@@ -56,7 +56,7 @@ def make_rag_settings(settings: "Settings") -> "RAGSettings | None":
         chunk_size=settings.rag_chunk_size,
         chunk_overlap=settings.rag_chunk_overlap,
         top_k=settings.rag_top_k,
-        retrieval_distance_threshold=settings.rag_distance_threshold,
+        distance_threshold=settings.rag_distance_threshold,
         temperature=settings.rag_temperature,
     )
 
