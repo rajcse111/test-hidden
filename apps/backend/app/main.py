@@ -12,7 +12,7 @@ from app.core.logging import configure_logging
 from app.db import init_db
 from app.services.ocr import OcrService
 from app.services.rag_retriever import is_available as rag_available
-from app.services.rag_retriever import make_vector_store
+from app.services.rag_retriever import make_vector_store, warmup_embed_model
 from app.services.runtime import RuntimeState
 from app.services.session_manager import SessionManager
 from app.services.stt import WhisperService
@@ -42,6 +42,9 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             logger.warning("RAG store init failed (continuing without RAG) | error={}", exc)
             app.state.rag_store = None
+        # Pre-load the embed model so the first real query doesn't pay cold-start cost.
+        import asyncio as _asyncio
+        _asyncio.get_event_loop().run_in_executor(None, warmup_embed_model, settings)
     else:
         logger.info("RAG disabled (rag_enabled=False or local-rag not installed)")
 

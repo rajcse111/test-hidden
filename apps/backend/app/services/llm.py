@@ -55,7 +55,7 @@ class OllamaProvider(LlmProvider):
             "messages": messages,
             "stream": True,
             "keep_alive": -1,
-            "options": {"num_predict": 800},
+            "options": {"num_predict": 400, "num_ctx": 2048},
         }
         last_error: Exception | None = None
         for attempt in range(3):
