@@ -38,6 +38,15 @@ yarn-debug.log*
 data/
 *.flag
 temp_backend_start.bat
+temp_streamlit_start.bat
+
+# ── RAG vector store (user-specific runtime data, rebuilt on ingest) ──────────
+local-rag/storage/
+storage/
+
+# ── User documents & debug screenshots ────────────────────────────────────────
+*.pdf
+*.png
 
 # ── Test & coverage ───────────────────────────────────────────────────────────
 coverage/
