@@ -13,6 +13,7 @@ interface AssistantState {
   transcript: TranscriptSegment[];
   audioInputText: string;
   interimAudioText: string;
+  backendInterimText: string;
   answer: string;
   notes: string;
   _generation: number;
@@ -27,6 +28,7 @@ interface AssistantState {
   setAudioInputText: (text: string) => void;
   setInterimAudioText: (text: string) => void;
   clearInterimAudioText: () => void;
+  setBackendInterimText: (text: string) => void;
   resetAudioInput: () => void;
   appendAnswer: (content: string, done: boolean) => void;
   setNotes: (notes: string) => void;
@@ -43,6 +45,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   transcript: [],
   audioInputText: "",
   interimAudioText: "",
+  backendInterimText: "",
   answer: "",
   notes: "",
   _generation: 0,
@@ -64,7 +67,8 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   setAudioInputText: (text) => set({ audioInputText: text }),
   setInterimAudioText: (text) => set({ interimAudioText: text }),
   clearInterimAudioText: () => set({ interimAudioText: "" }),
-  resetAudioInput: () => set({ audioInputText: "", interimAudioText: "", transcript: [] }),
+  setBackendInterimText: (text) => set({ backendInterimText: text }),
+  resetAudioInput: () => set({ audioInputText: "", interimAudioText: "", backendInterimText: "", transcript: [] }),
   appendAnswer: (content, done) =>
     set((state) => ({
       answer: done ? state.answer : `${state.answer}${content}`,

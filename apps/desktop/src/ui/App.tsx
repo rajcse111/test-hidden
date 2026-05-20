@@ -42,6 +42,7 @@ export function App(): JSX.Element {
   const appendAudioInputText = useAssistantStore((state) => state.appendAudioInputText);
   const setListening = useAssistantStore((state) => state.setListening);
   const setInterimAudioText = useAssistantStore((state) => state.setInterimAudioText);
+  const setBackendInterimText = useAssistantStore((state) => state.setBackendInterimText);
   const sessionId = useAssistantStore((state) => state.sessionId);
   const listening = useAssistantStore((state) => state.listening);
   const [manualText, setManualText] = useState("");
@@ -56,14 +57,16 @@ export function App(): JSX.Element {
         setSessionId(message.sessionId);
         setConnection("connected");
       }
-      if (message.type === "transcript.final" || message.type === "transcript.partial") {
+      if (message.type === "transcript.final") {
         addTranscript(message.segment);
-        if (
-          message.type === "transcript.final" &&
-          message.segment.text?.trim() &&
-          useAssistantStore.getState().listening
-        ) {
+        if (message.segment.text?.trim() && useAssistantStore.getState().listening) {
           appendAudioInputText(message.segment.text);
+          setBackendInterimText("");
+        }
+      }
+      if (message.type === "transcript.partial") {
+        if (useAssistantStore.getState().listening && message.segment.text?.trim()) {
+          setBackendInterimText(message.segment.text);
         }
       }
       if (message.type === "assistant.delta") {
@@ -75,7 +78,7 @@ export function App(): JSX.Element {
     });
     interviewSocket.connect();
     return () => unsubscribe();
-  }, [addTranscript, appendAudioInputText, appendAnswer, setConnection, setSessionId]);
+  }, [addTranscript, appendAudioInputText, appendAnswer, setBackendInterimText, setConnection, setSessionId]);
 
   const startNewRequest = useCallback((sid: string, prompt: string) => {
     interviewSocket.send({ type: "assistant.cancel", sessionId: sid });
@@ -236,6 +239,7 @@ function AudioInputPanel(): JSX.Element {
   const audioInputText = useAssistantStore((state) => state.audioInputText);
   const setAudioInputText = useAssistantStore((state) => state.setAudioInputText);
   const interimAudioText = useAssistantStore((state) => state.interimAudioText);
+  const backendInterimText = useAssistantStore((state) => state.backendInterimText);
   const listening = useAssistantStore((state) => state.listening);
 
   return (
@@ -262,7 +266,7 @@ function AudioInputPanel(): JSX.Element {
           </div>
         </div>
         <div className="flex-1 p-4">
-          {audioInputText || interimAudioText ? (
+          {audioInputText || interimAudioText || backendInterimText ? (
             <div className="flex h-full min-h-[300px] flex-col gap-3">
               <textarea
                 value={audioInputText}
@@ -273,6 +277,11 @@ function AudioInputPanel(): JSX.Element {
               {interimAudioText ? (
                 <p className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm leading-6 text-slate-400">
                   {interimAudioText}
+                </p>
+              ) : null}
+              {backendInterimText && !interimAudioText ? (
+                <p className="rounded-md border border-accent/20 bg-accent/5 px-3 py-2 text-sm leading-6 italic text-slate-500">
+                  {backendInterimText}
                 </p>
               ) : null}
             </div>

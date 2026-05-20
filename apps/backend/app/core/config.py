@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     transcript_context_segments: int = 60
     interview_auth_token: str | None = None
     preload_whisper_model: bool = False
+    stt_silence_frames: int = 2
+    stt_partial_trigger_seconds: float = 2.0
+    stt_partial_cooldown_seconds: float = 1.5
     log_level: str = "INFO"
     cors_origins: list[str] = ["http://localhost:5173"]
 

@@ -19,7 +19,7 @@ from app.schemas import (
 from app.services.llm import LlmOrchestrator
 from app.services.prompt_builder import PromptBuilder, PromptContext
 from app.services.session_manager import LiveSession
-from app.services.stt import AudioBuffer
+from app.services.stt import AudioBuffer, WhisperService
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from loguru import logger
 from pydantic import TypeAdapter, ValidationError
@@ -42,7 +42,9 @@ async def interview_ws(websocket: WebSocket) -> None:
     stt = websocket.app.state.stt
     prompts = PromptBuilder()
     generation_task: asyncio.Task[None] | None = None
-    audio_buf = AudioBuffer()
+    partial_task: asyncio.Task[None] | None = None
+    last_partial_at: float = 0.0
+    audio_buf = AudioBuffer(silence_flush_count=settings.stt_silence_frames)
 
     async with SessionLocal() as db:
         initial_id = str(uuid4())
@@ -92,8 +94,28 @@ async def interview_ws(websocket: WebSocket) -> None:
                             )
                             continue
                         should_flush = audio_buf.push(pcm)
+                        if not should_flush and audio_buf.has_speech:
+                            now_t = time()
+                            if (
+                                audio_buf.speech_duration_seconds >= settings.stt_partial_trigger_seconds
+                                and (now_t - last_partial_at) >= settings.stt_partial_cooldown_seconds
+                            ):
+                                if partial_task and not partial_task.done():
+                                    partial_task.cancel()
+                                partial_task = asyncio.create_task(
+                                    _send_partial(
+                                        websocket, stt, live,
+                                        audio_buf.snapshot(),
+                                        message.sampleRate, message.channels,
+                                        " ".join(live.transcript[-3:])[-200:],
+                                    )
+                                )
+                                last_partial_at = now_t
                         if should_flush:
                             if audio_buf.has_speech:
+                                if partial_task and not partial_task.done():
+                                    partial_task.cancel()
+                                    partial_task = None
                                 # Transcribe the full utterance — Whisper sees a complete
                                 # sentence instead of an arbitrary fixed-size window
                                 utterance_pcm = audio_buf.flush()
@@ -128,6 +150,7 @@ async def interview_ws(websocket: WebSocket) -> None:
                                     }
                                     await websocket.send_json({"type": "transcript.final", "segment": segment})
                                     live.append_transcript(clean, settings.transcript_context_segments)
+                                    last_partial_at = 0.0
                             else:
                                 # Silence-only buffer (no speech detected) — just reset
                                 audio_buf.flush()
@@ -147,6 +170,40 @@ async def interview_ws(websocket: WebSocket) -> None:
         finally:
             if generation_task and not generation_task.done():
                 generation_task.cancel()
+            if partial_task and not partial_task.done():
+                partial_task.cancel()
+
+
+async def _send_partial(
+    websocket: WebSocket,
+    stt: WhisperService,
+    live: LiveSession,
+    pcm: bytes,
+    sample_rate: int,
+    channels: int,
+    initial_prompt: str,
+) -> None:
+    try:
+        text = await stt.transcribe_pcm(pcm, sample_rate, channels, initial_prompt=initial_prompt)
+        if not text:
+            return
+        clean = text.strip()
+        if stt._has_repetition(clean):
+            return
+        now = int(time() * 1000)
+        segment = {
+            "id": str(uuid4()),
+            "sessionId": live.id,
+            "speaker": "speaker",
+            "text": clean,
+            "startedAt": now,
+            "endedAt": now,
+            "isPartial": True,
+        }
+        await websocket.send_json({"type": "transcript.partial", "segment": segment})
+        logger.debug("[WS] partial transcript sent | text={!r}", clean[:60])
+    except asyncio.CancelledError:
+        pass  # final transcription supersedes; silently drop
 
 
 async def _handle_transcript(

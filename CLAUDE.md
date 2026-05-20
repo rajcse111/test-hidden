@@ -16,7 +16,7 @@ packages/
   shared/        # Shared TypeScript types (ClientMessage, ServerMessage, OverlayMode, etc.)
   ui/            # Shared UI component library
 scripts/         # PowerShell setup/dev scripts
-wscript/         # Windows VBScript launchers — start backend/frontend/Ollama in hidden windows
+wscript/         # Windows VBScript launchers — start backend/frontend/Ollama in hidden windows; stop-cleanup.vbs kills all processes and removes runtime files
 data/            # SQLite DB written here at runtime (gitignored)
 logs/            # Log files written here at runtime (gitignored)
 ```
@@ -97,7 +97,8 @@ Two separate paths flow through the WebSocket connection:
 **Audio → Transcript only** (no LLM trigger):
 ```
 Microphone → audioCapture.ts → base64 PCM chunks (audio.chunk)
-  → WhisperService.transcribe_pcm()   [CPU, int8, English-only]
+  → AudioBuffer.push(pcm)   [energy VAD; flushes on 1 s trailing silence or 5 s max]
+  → WhisperService.transcribe_pcm()   [CPU, int8, English-only, beam_size=1]
   → transcript.final back over WS
   → assistantStore transcript segments
 ```
@@ -146,11 +147,12 @@ Two compiled targets co-exist in `apps/desktop` — do not mix their tsconfig se
 
 ### Backend Services
 - `app/services/llm.py` — `LlmOrchestrator` dispatches to `OpenAIProvider`, `OllamaProvider`, `GeminiProvider`, `OpenRouterProvider`. All providers implement `async stream()` returning `AsyncIterator[str]`. A new `LlmOrchestrator` is instantiated per WebSocket connection (not a singleton). `GeminiProvider` calls the Gemini REST API directly via httpx SSE — it does not use the Gemini Python SDK. `OllamaProvider` has 3-attempt retry with exponential backoff and hardcodes `keep_alive: -1` (model stays loaded) and `num_predict: 800`.
-- `app/services/stt.py` — `WhisperService` wraps faster-whisper; loads model lazily via `@cached_property`. Always runs on CPU with int8 quantization (`device="cpu"`, `compute_type="int8"`); transcription is English-only (`language="en"`). GPU inference is not configured.
+- `app/services/stt.py` — Two classes. `WhisperService` is a singleton in `app.state.stt`; the faster-whisper model loads lazily via `@cached_property` (once per process). Always CPU, int8 (`device="cpu"`, `compute_type="int8"`), English-only, `beam_size=1` for latency. `AudioBuffer` is instantiated per WebSocket connection — it accumulates raw PCM frames using energy-based VAD (`SPEECH_THRESHOLD=100` RMS), discards pre-speech silence, and flushes to `transcribe_pcm()` when 1 s of trailing silence is detected (or 5 s max). Also contains `_has_repetition()` to detect and drop Whisper hallucination loops.
 - `app/services/prompt_builder.py` — Builds OpenAI-style message lists for modes: `interview`, `coding`, `system-design`.
 - `app/services/session_manager.py` — In-memory `LiveSession` registry; holds `mode`, `provider`, `model`, rolling `transcript`, `screen_context`.
 - `app/services/ocr.py` — `OcrService` wraps pytesseract + Pillow; processes base64 PNG frames sent as `context.screen` messages.
-- `app/services/runtime.py` — `RuntimeState` singleton initialized at lifespan; holds references to all services and is injected into route handlers via FastAPI dependency. `RuntimeState.update()` remaps incoming keys `provider` → `default_provider` and `model` → `default_model` before calling `model_copy` — use those short names when posting to `/api/settings`.
+- `app/services/runtime.py` — `RuntimeState` holds only `settings: Settings` (not services — those live directly on `app.state`). `RuntimeState.update()` remaps incoming keys `provider` → `default_provider` and `model` → `default_model` before calling `model_copy` — use those short names when posting to `/api/settings`.
+- `app/core/security.py` — `require_websocket_token(websocket, settings)` checks the `x-interview-token` header or `?token=` query param for WebSocket auth. `enforce_auth` is a FastAPI dependency for HTTP routes. Both are no-ops when `INTERVIEW_AUTH_TOKEN` is unset.
 - `app/core/config.py` — `Settings` loaded via pydantic-settings from `.env`. All config accessed through `get_settings()` (cached).
 
 ### Frontend Services
@@ -166,7 +168,7 @@ Two compiled targets co-exist in `apps/desktop` — do not mix their tsconfig se
 - `TRANSCRIPT_PERSISTENCE=false` by default; transcripts are written to SQLite only when explicitly enabled.
 - Electron is configured with `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true` — keep renderer code free of Node APIs.
 - All new LLM providers must implement the `LlmProvider` ABC in `llm.py` and be registered in `LlmOrchestrator.providers`.
-- Audio chunks must arrive as base64-encoded PCM, 1–2 seconds max, at the sample rate specified in the `audio.chunk` message.
+- Audio chunks are base64-encoded PCM. The server's `AudioBuffer` handles VAD and utterance detection server-side, so small frames (250 ms) work fine — `sampleRate` and `channels` in each `audio.chunk` message must match the recorded audio.
 - On Windows 11, `WDA_EXCLUDEFROMCAPTURE` hides the overlay from screen recordings. Toggled at runtime via `Ctrl+Shift+P`; do not remove this when modifying window creation logic.
 - CSP in `electron/main.ts` only allows `connect-src` to `localhost:8000` and `127.0.0.1:8000`. Update it if the backend port changes.
 - `CORS_ORIGINS` defaults to `["http://localhost:5173"]`. Add entries (comma-separated in `.env`) if the renderer runs elsewhere.

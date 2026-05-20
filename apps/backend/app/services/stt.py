@@ -26,12 +26,18 @@ class AudioBuffer:
     # even on quiet microphones; browser noise-suppression keeps true silence
     # well below this value so false-positives are handled by Silero VAD
     SPEECH_THRESHOLD = 100
-    SILENCE_FLUSH_COUNT = 4   # consecutive silent frames before flush (4 × 250 ms = 1.0 s)
+    SILENCE_FLUSH_COUNT = 4   # default; overridden per-instance via silence_flush_count param
     MAX_BUFFER_SECONDS = 5    # force-flush fallback for noisy environments
 
-    def __init__(self, sample_rate: int = 16000, channels: int = 1) -> None:
+    def __init__(
+        self,
+        sample_rate: int = 16000,
+        channels: int = 1,
+        silence_flush_count: int | None = None,
+    ) -> None:
         self.sample_rate = sample_rate
         self.channels = channels
+        self._silence_flush_count = silence_flush_count if silence_flush_count is not None else self.SILENCE_FLUSH_COUNT
         self._chunks: list[bytes] = []
         self._silence_count = 0
         self._has_speech = False
@@ -49,7 +55,7 @@ class AudioBuffer:
             # Keep trailing silence so Whisper hears the natural end of the sentence
             self._chunks.append(pcm)
             self._silence_count += 1
-            if self._silence_count >= self.SILENCE_FLUSH_COUNT:
+            if self._silence_count >= self._silence_flush_count:
                 return True
         # else: pre-speech silence — drop to avoid leading noise in the utterance
 
@@ -66,9 +72,18 @@ class AudioBuffer:
         self._has_speech = False
         return data
 
+    def snapshot(self) -> bytes:
+        """Return current accumulated PCM without resetting state."""
+        return b"".join(self._chunks)
+
     @property
     def has_speech(self) -> bool:
         return self._has_speech
+
+    @property
+    def speech_duration_seconds(self) -> float:
+        total_bytes = sum(len(c) for c in self._chunks)
+        return total_bytes / (self.sample_rate * self.channels * 2)
 
     @staticmethod
     def _rms(pcm: bytes) -> float:
