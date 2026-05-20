@@ -32,8 +32,11 @@ def split_chunks(raw_chunks: list[Chunk], chunk_size: int = 800, chunk_overlap: 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
-        # These separators are tried in order: paragraph > sentence > word > char
-        separators=["\n\n", "\n", ". ", "! ", "? ", " ", ""],
+        # "\nQ" is tried first so numbered Q&A documents (Q1./Q2. style) break at each
+        # question boundary, keeping one Q&A pair per chunk for precise embeddings.
+        # Falls through to paragraph/sentence/word splits for non-Q&A content.
+        separators=["\nQ", "\n\n", "\n", ". ", "! ", "? ", " ", ""],
+        keep_separator=True,  # keep "\nQ" at the start of the next chunk; strip_whitespace trims \n
         length_function=len,
     )
 
