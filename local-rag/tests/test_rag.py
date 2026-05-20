@@ -1,5 +1,5 @@
 """
-test_rag.py — Smoke-test for the full ingest → retrieve pipeline.
+test_rag.py -- Smoke-test for the full ingest -> retrieve pipeline.
 
 Uses a temporary Chroma directory so tests never pollute the real storage.
 The test mocks the Ollama embed call so the suite runs without Ollama running.
@@ -20,10 +20,10 @@ import pytest
 # Ensure the local-rag package is importable when running pytest from the repo root
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from app.config import RAGSettings
-from app.ingest import ingest_file
-from app.retriever import retrieve
-from app.vector_store import VectorStore
+from rag_core.config import RAGSettings
+from rag_core.ingest import ingest_file
+from rag_core.retriever import retrieve
+from rag_core.vector_store import VectorStore
 
 
 SAMPLE_TEXT = (
@@ -68,7 +68,7 @@ def store_settings(tmp_path: Path):
 def test_empty_store_retrieval(store_settings):
     """Retrieval on an empty store must return an empty list (not raise)."""
     store, settings = store_settings
-    with patch("app.retriever.embed_query", return_value=FAKE_EMBEDDING):
+    with patch("rag_core.retriever.embed_query", return_value=FAKE_EMBEDDING):
         results = retrieve("What is RAG?", store, settings)
     assert results == []
 
@@ -76,7 +76,7 @@ def test_empty_store_retrieval(store_settings):
 def test_ingest_creates_chunks(store_settings, sample_doc):
     """Ingesting a text doc should create at least one chunk in the store."""
     store, settings = store_settings
-    with patch("app.ingest.embed_texts", return_value=[FAKE_EMBEDDING]):
+    with patch("rag_core.ingest.embed_texts", return_value=[FAKE_EMBEDDING]):
         counts = ingest_file(sample_doc, store, settings)
 
     assert counts["added"] >= 1
@@ -86,10 +86,10 @@ def test_ingest_creates_chunks(store_settings, sample_doc):
 def test_idempotent_ingest(store_settings, sample_doc):
     """Re-ingesting the same file should add 0 new chunks (pure skip)."""
     store, settings = store_settings
-    with patch("app.ingest.embed_texts", return_value=[FAKE_EMBEDDING]):
+    with patch("rag_core.ingest.embed_texts", return_value=[FAKE_EMBEDDING]):
         first = ingest_file(sample_doc, store, settings)
 
-    with patch("app.ingest.embed_texts", return_value=[FAKE_EMBEDDING]):
+    with patch("rag_core.ingest.embed_texts", return_value=[FAKE_EMBEDDING]):
         second = ingest_file(sample_doc, store, settings)
 
     assert second["added"] == 0
@@ -99,10 +99,10 @@ def test_idempotent_ingest(store_settings, sample_doc):
 def test_retrieval_finds_relevant_chunk(store_settings, sample_doc):
     """After ingestion, retrieval should return a chunk containing 'RAG'."""
     store, settings = store_settings
-    with patch("app.ingest.embed_texts", return_value=[FAKE_EMBEDDING]):
+    with patch("rag_core.ingest.embed_texts", return_value=[FAKE_EMBEDDING]):
         ingest_file(sample_doc, store, settings)
 
-    with patch("app.retriever.embed_query", return_value=FAKE_EMBEDDING):
+    with patch("rag_core.retriever.embed_query", return_value=FAKE_EMBEDDING):
         results = retrieve("What is RAG?", store, settings)
 
     assert len(results) >= 1
@@ -113,7 +113,7 @@ def test_retrieval_finds_relevant_chunk(store_settings, sample_doc):
 def test_list_sources(store_settings, sample_doc):
     """After ingestion, list_sources should include the sample filename."""
     store, settings = store_settings
-    with patch("app.ingest.embed_texts", return_value=[FAKE_EMBEDDING]):
+    with patch("rag_core.ingest.embed_texts", return_value=[FAKE_EMBEDDING]):
         ingest_file(sample_doc, store, settings)
 
     sources = store.list_sources()
@@ -123,7 +123,7 @@ def test_list_sources(store_settings, sample_doc):
 def test_reset_clears_store(store_settings, sample_doc):
     """After reset, the store should be empty."""
     store, settings = store_settings
-    with patch("app.ingest.embed_texts", return_value=[FAKE_EMBEDDING]):
+    with patch("rag_core.ingest.embed_texts", return_value=[FAKE_EMBEDDING]):
         ingest_file(sample_doc, store, settings)
 
     assert store.count() > 0

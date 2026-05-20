@@ -1,11 +1,11 @@
-"""
-cli.py — Command-line interface for the local RAG system.
+﻿"""
+cli.py â€” Command-line interface for the local RAG system.
 
 Commands:
-  ingest <path>  — Load documents from a file or directory into the vector store.
-  chat           — Interactive Q&A loop with streamed answers and printed citations.
-  reset          — Wipe the entire vector store (irreversible).
-  status         — Show collection stats (document count, source files).
+  ingest <path>  â€” Load documents from a file or directory into the vector store.
+  chat           â€” Interactive Q&A loop with streamed answers and printed citations.
+  reset          â€” Wipe the entire vector store (irreversible).
+  status         â€” Show collection stats (document count, source files).
 
 Uses typer for CLI structure and rich for readable coloured output.
 """
@@ -19,15 +19,15 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
-app = typer.Typer(help="Local RAG assistant — ask questions grounded in your documents.")
+app = typer.Typer(help="Local RAG assistant â€” ask questions grounded in your documents.")
 console = Console()
 err_console = Console(stderr=True, style="red")
 
 
 def _get_store():
     """Initialise VectorStore from current settings."""
-    from app.config import get_settings
-    from app.vector_store import VectorStore
+    from rag_core.config import get_settings
+    from rag_core.vector_store import VectorStore
 
     settings = get_settings()
     return VectorStore(settings.chroma_path_resolved, settings.collection_name), settings
@@ -38,7 +38,7 @@ def ingest(
     path: Path = typer.Argument(..., help="File or directory to ingest."),
 ) -> None:
     """Ingest documents into the vector store."""
-    from app.ingest import ingest_path
+    from rag_core.ingest import ingest_path
 
     if not path.exists():
         err_console.print(f"Path not found: {path}")
@@ -59,7 +59,7 @@ def ingest(
 @app.command()
 def chat() -> None:
     """Start an interactive chat session (type 'quit' or Ctrl-C to exit)."""
-    from app.rag import answer
+    from rag_core.rag import answer
 
     store, settings = _get_store()
 
@@ -108,7 +108,7 @@ def chat() -> None:
             console.print()  # newline after streaming ends
 
             if citations:
-                console.print("\n[dim]── Sources ──[/dim]")
+                console.print("\n[dim]â”€â”€ Sources â”€â”€[/dim]")
                 for cite in citations:
                     console.print(
                         f"  [cyan]{cite['source']}[/cyan], "
@@ -151,7 +151,7 @@ def status() -> None:
     sources = store.list_sources()
     table.add_row("Indexed files", str(len(sources)))
     for src in sources:
-        table.add_row("", f"  • {src}")
+        table.add_row("", f"  â€¢ {src}")
 
     console.print(table)
 

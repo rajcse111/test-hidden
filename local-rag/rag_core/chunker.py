@@ -9,7 +9,7 @@ Metadata (source, page) from loaders is carried forward to every child chunk
 and a sequential chunk_index is added so each chunk has a unique identity.
 """
 
-from app.loaders import Chunk
+from rag_core.loaders import Chunk
 
 
 def split_chunks(raw_chunks: list[Chunk], chunk_size: int = 800, chunk_overlap: int = 120) -> list[Chunk]:

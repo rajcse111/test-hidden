@@ -10,7 +10,7 @@ Low temperature (set in rag.py / config.py) combined with these instructions
 produces grounded, non-hallucinated answers.
 """
 
-from app.vector_store import RetrievedChunk
+from rag_core.vector_store import RetrievedChunk
 
 
 RAG_SYSTEM_PROMPT = """You are a helpful assistant that answers questions strictly based on the provided document excerpts.

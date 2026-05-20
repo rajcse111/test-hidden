@@ -12,10 +12,10 @@ the caller can display source attributions alongside the streamed answer.
 from collections.abc import Iterator
 from typing import Any
 
-from app.config import RAGSettings, get_settings
-from app.prompt import build_citations, build_messages
-from app.retriever import retrieve
-from app.vector_store import RetrievedChunk, VectorStore
+from rag_core.config import RAGSettings, get_settings
+from rag_core.prompt import build_citations, build_messages
+from rag_core.retriever import retrieve
+from rag_core.vector_store import RetrievedChunk, VectorStore
 
 
 def answer(

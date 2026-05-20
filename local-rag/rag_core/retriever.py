@@ -9,9 +9,9 @@ Early-exit when the collection is empty avoids a needless embed call
 and provides a clear signal to the RAG layer that no documents exist yet.
 """
 
-from app.config import RAGSettings
-from app.embeddings import embed_query
-from app.vector_store import RetrievedChunk, VectorStore
+from rag_core.config import RAGSettings
+from rag_core.embeddings import embed_query
+from rag_core.vector_store import RetrievedChunk, VectorStore
 
 
 def retrieve(

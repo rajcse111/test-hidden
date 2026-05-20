@@ -9,7 +9,6 @@ Endpoints:
 All endpoints degrade gracefully when RAG is not initialised (return 503).
 """
 
-import sys
 import tempfile
 from pathlib import Path
 
@@ -70,13 +69,7 @@ async def upload_document(request: Request, file: UploadFile) -> dict:
         content = await file.read()
         tmp_path.write_bytes(content)
 
-        # Import local-rag ingest function (path was set in rag_retriever.py)
-        # We do a local import here to avoid hard dependency at module level
-        rag_local_path = str(Path(__file__).parents[3] / "local-rag")
-        if rag_local_path not in sys.path:
-            sys.path.insert(0, rag_local_path)
-
-        from app.ingest import ingest_file  # local-rag/app/ingest.py
+        from rag_core.ingest import ingest_file  # path set by rag_retriever.py at startup
 
         rag_settings = make_rag_settings(settings)
         counts = ingest_file(tmp_path, store, rag_settings)

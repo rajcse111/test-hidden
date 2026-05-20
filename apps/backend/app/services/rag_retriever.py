@@ -27,9 +27,9 @@ if str(_local_rag_path) not in sys.path:
 
 _RAG_AVAILABLE = False
 try:
-    from app.config import RAGSettings  # local-rag/app/config.py
-    from app.retriever import retrieve as _retrieve
-    from app.vector_store import VectorStore
+    from rag_core.config import RAGSettings  # local-rag/rag_core/config.py
+    from rag_core.retriever import retrieve as _retrieve
+    from rag_core.vector_store import VectorStore
     _RAG_AVAILABLE = True
 except ImportError:
     pass

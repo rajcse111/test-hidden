@@ -1,11 +1,11 @@
 """
-web.py — Streamlit web UI for the local RAG system.
+web.py -- Streamlit web UI for the local RAG system.
 
 Features:
-  • File uploader (PDF, DOCX, XLSX) — ingests on upload, shows chunk count.
-  • Chat interface with streaming answer display.
-  • Expandable "Sources" section showing retrieved chunks per answer.
-  • Sidebar with store stats and a reset button.
+  - File uploader (PDF, DOCX, XLSX) -- ingests on upload, shows chunk count.
+  - Chat interface with streaming answer display.
+  - Expandable "Sources" section showing retrieved chunks per answer.
+  - Sidebar with store stats and a reset button.
 
 Run with: streamlit run web.py
 """
@@ -19,13 +19,13 @@ import streamlit as st
 # Allow running from the local-rag/ directory without installing the package
 sys.path.insert(0, str(Path(__file__).parent))
 
-from app.config import get_settings
-from app.ingest import ingest_file
-from app.rag import answer
-from app.vector_store import VectorStore
+from rag_core.config import get_settings
+from rag_core.ingest import ingest_file
+from rag_core.rag import answer
+from rag_core.vector_store import VectorStore
 
 
-# ── Page config ──────────────────────────────────────────────────────────────
+# -- Page config ---------------------------------------------------------------
 st.set_page_config(
     page_title="Local RAG Assistant",
     page_icon="📚",
@@ -33,7 +33,7 @@ st.set_page_config(
 )
 
 
-# ── Singleton store ───────────────────────────────────────────────────────────
+# -- Singleton store -----------------------------------------------------------
 @st.cache_resource
 def get_store() -> tuple[VectorStore, object]:
     settings = get_settings()
@@ -44,7 +44,7 @@ def get_store() -> tuple[VectorStore, object]:
 store, settings = get_store()
 
 
-# ── Sidebar — upload & stats ──────────────────────────────────────────────────
+# -- Sidebar: upload & stats ---------------------------------------------------
 with st.sidebar:
     st.header("📂 Documents")
     st.caption(f"{store.count()} chunks from {len(store.list_sources())} file(s)")
@@ -52,7 +52,7 @@ with st.sidebar:
     uploaded = st.file_uploader(
         "Upload a document",
         type=["pdf", "docx", "xlsx"],
-        help="PDF, Word, or Excel files. Ingestion is idempotent — uploading the same file again is safe.",
+        help="PDF, Word, or Excel files. Ingestion is idempotent -- uploading the same file again is safe.",
     )
     if uploaded is not None:
         suffix = Path(uploaded.name).suffix
@@ -60,7 +60,7 @@ with st.sidebar:
             tmp.write(uploaded.read())
             tmp_path = Path(tmp.name)
 
-        with st.spinner(f"Ingesting {uploaded.name}…"):
+        with st.spinner(f"Ingesting {uploaded.name}..."):
             try:
                 counts = ingest_file(tmp_path, store, settings)
                 st.success(
@@ -98,9 +98,9 @@ with st.sidebar:
     st.caption(f"**Top-k:** {settings.top_k}")
 
 
-# ── Main chat area ────────────────────────────────────────────────────────────
+# -- Main chat area ------------------------------------------------------------
 st.title("📚 Local RAG Assistant")
-st.caption("Answers grounded in your documents — powered by Ollama, ChromaDB, and nomic-embed-text.")
+st.caption("Answers grounded in your documents -- powered by Ollama, ChromaDB, and nomic-embed-text.")
 
 # Initialise session state
 if "messages" not in st.session_state:
@@ -114,12 +114,12 @@ for msg in st.session_state.messages:
             with st.expander("📎 Sources", expanded=False):
                 for cite in msg["citations"]:
                     st.markdown(
-                        f"**{cite['source']}** — page {cite['page']} "
-                        f"*(distance: {cite['distance']})*\n\n> {cite['snippet']}…"
+                        f"**{cite['source']}** -- page {cite['page']} "
+                        f"*(distance: {cite['distance']})*\n\n> {cite['snippet']}..."
                     )
 
 # Chat input
-if prompt := st.chat_input("Ask a question about your documents…"):
+if prompt := st.chat_input("Ask a question about your documents..."):
     if store.count() == 0:
         st.warning("No documents indexed yet. Upload a file in the sidebar first.")
         st.stop()
@@ -145,8 +145,8 @@ if prompt := st.chat_input("Ask a question about your documents…"):
                 with st.expander("📎 Sources", expanded=True):
                     for cite in citations:
                         st.markdown(
-                            f"**{cite['source']}** — page {cite['page']} "
-                            f"*(distance: {cite['distance']})*\n\n> {cite['snippet']}…"
+                            f"**{cite['source']}** -- page {cite['page']} "
+                            f"*(distance: {cite['distance']})*\n\n> {cite['snippet']}..."
                         )
         except RuntimeError as exc:
             full_response = f"⚠️ {exc}"

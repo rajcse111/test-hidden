@@ -16,11 +16,11 @@ Summary output:
 import hashlib
 from pathlib import Path
 
-from app.chunker import split_chunks
-from app.config import RAGSettings
-from app.embeddings import embed_texts
-from app.loaders import load_file
-from app.vector_store import VectorStore
+from rag_core.chunker import split_chunks
+from rag_core.config import RAGSettings
+from rag_core.embeddings import embed_texts
+from rag_core.loaders import load_file
+from rag_core.vector_store import VectorStore
 
 
 def _file_sha256(path: Path) -> str:
