@@ -11,11 +11,13 @@ class Settings(BaseSettings):
     backend_port: int = 8000
     database_url: str = "sqlite+aiosqlite:///./data/interview_assistant.db"
     openai_api_key: str | None = None
+    anthropic_api_key: str | None = None
     gemini_api_key: str | None = None
     openrouter_api_key: str | None = None
     ollama_host: str = "http://localhost:11434"
     default_provider: str = "ollama"
     default_model: str = "llama3"
+    default_mode: str = "interview"
     whisper_model: str = "base"
     local_only: bool = False
     transcript_persistence: bool = False
@@ -39,6 +41,17 @@ class Settings(BaseSettings):
     rag_distance_threshold: float = 1.4
     rag_temperature: float = 0.2
     cors_origins: list[str] = ["http://localhost:5173"]
+
+    # Question Detector — auto-answering from audio transcripts
+    qd_enabled: bool = True
+    qd_confidence_threshold: float = 0.6
+    qd_min_words: int = 4
+    qd_dedup_window_seconds: float = 30.0
+    qd_dedup_similarity_threshold: float = 0.85
+    qd_model: str = "llama3"
+    qd_topic_shift_min_words: int = 6
+    qd_cooldown_seconds: float = 5.0
+    qd_log_detections: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

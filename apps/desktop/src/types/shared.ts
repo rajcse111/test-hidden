@@ -79,9 +79,18 @@ export interface AssistantCitationsMessage {
   citations: Citation[];
 }
 
+export interface AssistantQuestionDetectedMessage {
+  type: "assistant.question_detected";
+  sessionId: string;
+  question: string;
+  kind: "question" | "topic_shift";
+  confidence: number;
+}
+
 export type ServerMessage =
   | SessionReadyMessage
   | TranscriptMessage
   | AssistantDeltaMessage
   | AssistantErrorMessage
-  | AssistantCitationsMessage;
+  | AssistantCitationsMessage
+  | AssistantQuestionDetectedMessage;

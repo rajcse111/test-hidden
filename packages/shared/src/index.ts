@@ -1,6 +1,6 @@
-export type AssistantMode = "interview" | "coding" | "system-design";
+export type AssistantMode = "interview" | "coding" | "system-design" | "senior-fullstack";
 export type OverlayMode = "passive" | "expanded" | "invisible";
-export type Provider = "openai" | "gemini" | "ollama" | "openrouter";
+export type Provider = "openai" | "anthropic" | "gemini" | "ollama" | "openrouter";
 
 export interface TranscriptSegment {
   id: string;
@@ -38,5 +38,6 @@ export type ServerMessage =
   | { type: "assistant.delta"; delta: AssistantDelta }
   | { type: "assistant.citations"; sessionId: string; citations: Citation[] }
   | { type: "assistant.error"; sessionId: string; message: string }
+  | { type: "assistant.question_detected"; sessionId: string; question: string; kind: "question" | "topic_shift"; confidence: number }
   | { type: "pong"; at: string };
 

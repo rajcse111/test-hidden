@@ -1,5 +1,6 @@
 import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, nativeImage, screen, session, shell } from "electron";
 import Store from "electron-store";
+import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,6 +16,41 @@ const store = new Store<{ clickThrough: boolean; invisible: boolean; contentProt
 });
 
 let mainWindow: BrowserWindow | null = null;
+let backendProcess: ChildProcess | null = null;
+
+function startBackend(): void {
+  if (!isDev) return; // packaged app bundles its own backend launch mechanism
+  const projectRoot = path.join(__dirname, "..", "..", "..");
+  const pythonExe =
+    process.platform === "win32"
+      ? path.join(projectRoot, ".venv", "Scripts", "python.exe")
+      : path.join(projectRoot, ".venv", "bin", "python");
+  const backendDir = path.join(projectRoot, "apps", "backend");
+  const startedAt = Date.now();
+
+  backendProcess = spawn(
+    pythonExe,
+    ["-m", "uvicorn", "app.main:app", "--app-dir", backendDir, "--host", "0.0.0.0", "--port", "8000"],
+    { cwd: projectRoot, env: { ...process.env, PYTHONPATH: backendDir } }
+  );
+
+  backendProcess.stderr?.on("data", (data: Buffer) => {
+    console.error("[backend]", data.toString().trimEnd());
+  });
+
+  backendProcess.on("exit", (code) => {
+    backendProcess = null;
+    const lived = Date.now() - startedAt;
+    if (lived >= 3000) {
+      // Crash after running — restart after short delay
+      console.log(`[backend] exited (code=${code}) after ${lived}ms — restarting in 2 s`);
+      setTimeout(startBackend, 2000);
+    } else {
+      // Died immediately: port already in use or venv not found — don't loop
+      console.log(`[backend] exited (code=${code}) after ${lived}ms — port in use or startup error, not restarting`);
+    }
+  });
+}
 
 function createWindow(): void {
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -93,6 +129,8 @@ function registerShortcuts(): void {
 }
 
 app.whenReady().then(() => {
+  startBackend();
+
   // Grant microphone access to the renderer (required for both SpeechRecognition and getUserMedia).
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(["media", "audioCapture"].includes(permission));
@@ -122,6 +160,7 @@ app.whenReady().then(() => {
 });
 
 app.on("will-quit", () => {
+  backendProcess?.kill();
   globalShortcut.unregisterAll();
 });
 

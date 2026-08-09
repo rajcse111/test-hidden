@@ -14,5 +14,7 @@ class RuntimeState:
             normalized["default_provider"] = normalized.pop("provider")
         if "model" in normalized:
             normalized["default_model"] = normalized.pop("model")
+        if "mode" in normalized:
+            normalized["default_mode"] = normalized.pop("mode")
         self.settings = self.settings.model_copy(update=normalized)
         return self.settings

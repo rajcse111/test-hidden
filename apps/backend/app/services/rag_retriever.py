@@ -131,7 +131,7 @@ def retrieve_chunks(
     try:
         chunks = _retrieve(question, cached_store, rag_settings)
         if not chunks:
-            logger.debug("RAG: no chunks above distance threshold | question={!r}", question[:60])
+            logger.info("RAG: no relevant chunks found, LLM will answer from general knowledge | question={!r}", question[:60])
             return []
         return [
             {

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class SettingsPayload(BaseModel):
     provider: str | None = None
     model: str | None = None
+    mode: str | None = None
     whisper_model: str | None = None
     local_only: bool | None = None
     transcript_persistence: bool | None = None

@@ -57,6 +57,15 @@ export async function resetDocuments(): Promise<void> {
   if (!response.ok) throw new Error(`Reset failed: ${response.status}`);
 }
 
+export async function updateSetting(key: string, value: string): Promise<void> {
+  const response = await fetch(`${BACKEND_URL}/api/settings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ [key]: value }),
+  });
+  if (!response.ok) throw new Error(`Settings update failed: ${response.status}`);
+}
+
 function authHeaders(): Record<string, string> {
   return BACKEND_TOKEN ? { "X-Interview-Token": BACKEND_TOKEN } : {};
 }

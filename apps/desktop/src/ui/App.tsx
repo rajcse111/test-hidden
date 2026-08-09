@@ -19,7 +19,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 
 import { audioCapture } from "../services/audioCapture";
-import { listDocuments, resetDocuments, runOcr, uploadDocument } from "../services/backend";
+import { listDocuments, resetDocuments, runOcr, updateSetting, uploadDocument } from "../services/backend";
 import { interviewSocket } from "../services/interviewSocket";
 import { liveSpeech } from "../services/liveSpeech";
 import { useAssistantStore } from "../state/assistantStore";
@@ -82,6 +82,11 @@ export function App(): JSX.Element {
         }
       }
       if (message.type === "assistant.error") setError(message.message);
+      if (message.type === "assistant.question_detected") {
+        useAssistantStore.getState().resetAnswer();
+        generationRef.current = useAssistantStore.getState()._generation;
+        useAssistantStore.getState().setActiveTab("answers");
+      }
     });
     interviewSocket.connect();
     return () => unsubscribe();
@@ -232,7 +237,16 @@ export function App(): JSX.Element {
               placeholder="Paste or type an interview question..."
               className="min-w-0 flex-1 rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none placeholder:text-slate-500 focus:border-accent"
             />
-            <button onClick={submitManual} className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-slate-950">
+            <button
+              onClick={submitManual}
+              disabled={store.connection !== "connected"}
+              title={store.connection !== "connected" ? "Backend offline — waiting for connection" : undefined}
+              className={`rounded-md px-4 py-2 text-sm font-semibold transition ${
+                store.connection === "connected"
+                  ? "bg-accent text-slate-950"
+                  : "cursor-not-allowed bg-white/10 text-slate-500"
+              }`}
+            >
               Send
             </button>
           </div>
@@ -409,7 +423,11 @@ function NotesPanel(): JSX.Element {
   );
 }
 
+const MODES = ["interview", "coding", "system-design", "senior-fullstack"] as const;
+type AssistantMode = (typeof MODES)[number];
+
 function SettingsPanel(): JSX.Element {
+  const [currentMode, setCurrentMode] = useState<AssistantMode>("interview");
   const [docInfo, setDocInfo] = useState<{ total_chunks: number; sources: string[] } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [docError, setDocError] = useState<string | null>(null);
@@ -456,9 +474,32 @@ function SettingsPanel(): JSX.Element {
     }
   };
 
+  const handleModeChange = async (mode: AssistantMode): Promise<void> => {
+    await updateSetting("mode", mode);
+    setCurrentMode(mode);
+    interviewSocket.close();
+    interviewSocket.connect();
+  };
+
   return (
     <Panel>
       <div className="space-y-4">
+        {/* Mode Selector */}
+        <div className="rounded-md border border-white/10 bg-white/5 p-3">
+          <div className="mb-2 text-xs font-semibold text-slate-100">Assistant Mode</div>
+          <select
+            value={currentMode}
+            onChange={(e) => void handleModeChange(e.target.value as AssistantMode)}
+            className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 outline-none focus:border-accent"
+          >
+            {MODES.map((m) => (
+              <option key={m} value={m} className="bg-slate-900">
+                {m}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-xs text-slate-500">Takes effect on reconnect.</p>
+        </div>
         {/* Document Upload */}
         <div className="rounded-md border border-white/10 bg-white/5 p-3">
           <div className="mb-3 text-xs font-semibold text-slate-100">📚 RAG Documents</div>

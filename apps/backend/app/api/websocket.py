@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import binascii
+import dataclasses
 import json
 from time import time
 from uuid import uuid4
@@ -21,6 +22,7 @@ from app.services.prompt_builder import PromptBuilder, PromptContext
 from app.services.rag_retriever import is_available as rag_available
 from app.services.rag_retriever import retrieve_chunks
 from app.services.session_manager import LiveSession
+from app.services.question_detector import QuestionDetector
 from app.services.stt import AudioBuffer, WhisperService
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from loguru import logger
@@ -47,12 +49,24 @@ async def interview_ws(websocket: WebSocket) -> None:
     partial_task: asyncio.Task[None] | None = None
     last_partial_at: float = 0.0
     audio_buf = AudioBuffer(silence_flush_count=settings.stt_silence_frames)
+    question_detector: QuestionDetector | None = (
+        QuestionDetector(
+            confidence_threshold=settings.qd_confidence_threshold,
+            min_words=settings.qd_min_words,
+            topic_shift_min_words=settings.qd_topic_shift_min_words,
+            dedup_window_seconds=settings.qd_dedup_window_seconds,
+            similarity_threshold=settings.qd_dedup_similarity_threshold,
+            cooldown_seconds=settings.qd_cooldown_seconds,
+        )
+        if settings.qd_enabled
+        else None
+    )
 
     async with SessionLocal() as db:
         initial_id = str(uuid4())
         live = LiveSession(
             id=initial_id,
-            mode="interview",
+            mode=settings.default_mode,
             provider=settings.default_provider,
             model=settings.default_model,
         )
@@ -151,8 +165,37 @@ async def interview_ws(websocket: WebSocket) -> None:
                                         "isPartial": False,
                                     }
                                     await websocket.send_json({"type": "transcript.final", "segment": segment})
-                                    live.append_transcript(clean, settings.transcript_context_segments)
                                     last_partial_at = 0.0
+
+                                    if question_detector is not None:
+                                        result = question_detector.detect(clean)
+                                        if settings.qd_log_detections:
+                                            logger.debug(
+                                                "[QD] detect | kind={} confidence={:.2f} detected={} | text={!r}",
+                                                result.kind, result.confidence, result.detected, clean[:60],
+                                            )
+                                        if result.detected:
+                                            logger.info(
+                                                "[QD] trigger | kind={} confidence={:.2f} session={} | text={!r}",
+                                                result.kind, result.confidence, live.id, clean[:60],
+                                            )
+                                            await websocket.send_json({
+                                                "type": "assistant.question_detected",
+                                                "sessionId": live.id,
+                                                "question": clean,
+                                                "kind": result.kind,
+                                                "confidence": result.confidence,
+                                            })
+                                            qd_live = dataclasses.replace(live, provider="ollama", model=settings.qd_model)
+                                            generation_task = await _handle_transcript(
+                                                websocket, db, settings, llm, prompts,
+                                                qd_live, clean, generation_task,
+                                                skip_transcript_send=True,
+                                            )
+                                        else:
+                                            live.append_transcript(clean, settings.transcript_context_segments)
+                                    else:
+                                        live.append_transcript(clean, settings.transcript_context_segments)
                             else:
                                 # Silence-only buffer (no speech detected) — just reset
                                 audio_buf.flush()
@@ -217,6 +260,8 @@ async def _handle_transcript(
     live: LiveSession,
     text: str,
     generation_task: asyncio.Task[None] | None,
+    *,
+    skip_transcript_send: bool = False,
 ) -> asyncio.Task[None] | None:
     clean = text.strip()
     if not clean:
@@ -225,16 +270,17 @@ async def _handle_transcript(
     logger.info("question received | session={} preview={!r}", live.id, clean[:80])
 
     now = int(time() * 1000)
-    segment = {
-        "id": str(uuid4()),
-        "sessionId": live.id,
-        "speaker": "speaker",
-        "text": clean,
-        "startedAt": now,
-        "endedAt": now,
-        "isPartial": False,
-    }
-    await websocket.send_json({"type": "transcript.final", "segment": segment})
+    if not skip_transcript_send:
+        segment = {
+            "id": str(uuid4()),
+            "sessionId": live.id,
+            "speaker": "speaker",
+            "text": clean,
+            "startedAt": now,
+            "endedAt": now,
+            "isPartial": False,
+        }
+        await websocket.send_json({"type": "transcript.final", "segment": segment})
 
     if settings.transcript_persistence:
         db.add(Transcript(session_id=live.id, text=clean, started_at_ms=now, ended_at_ms=now))
@@ -250,8 +296,9 @@ async def _handle_transcript(
     # VectorStore per call to pick up documents ingested by any process)
     rag_context: str | None = None
     citations: list[dict] = []
+    rag_searched = settings.rag_enabled and rag_available()
 
-    if settings.rag_enabled and rag_available():
+    if rag_searched:
         try:
             loop = asyncio.get_event_loop()
             chunks = await loop.run_in_executor(
@@ -284,6 +331,11 @@ async def _handle_transcript(
                     "sessionId": live.id,
                     "citations": citations,
                 })
+            else:
+                logger.info(
+                    "RAG: no relevant chunks found, falling back to LLM general knowledge | session={} question={!r}",
+                    live.id, clean[:60],
+                )
         except Exception as exc:
             logger.warning("RAG retrieval failed (falling back to direct LLM) | error={}", exc)
 
@@ -293,6 +345,7 @@ async def _handle_transcript(
         transcript=transcript,
         screen_context=live.screen_context,
         rag_context=rag_context,
+        rag_searched=rag_searched,
     ))
     logger.info("starting generation | session={} provider={} model={} rag={}",
                 live.id, live.provider, live.model, rag_context is not None)

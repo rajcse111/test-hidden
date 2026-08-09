@@ -44,11 +44,12 @@ electron/main.ts  ──IPC──  electron/preload.ts  ──contextBridge─�
                                                          backend WS :8000  backend HTTP :8000
 ```
 
-- **`interviewSocket`** (`src/services/interviewSocket.ts`) — singleton WebSocket client. Handles auto-reconnect with exponential backoff (cap 30 s). Messages queue while disconnected. Types come from `@interview/shared`.
+- **`interviewSocket`** (`src/services/interviewSocket.ts`) — singleton WebSocket client. Handles auto-reconnect with exponential backoff (cap 30 s). Messages queue while disconnected. Imports `ClientMessage` / `ServerMessage` from `src/types/shared.ts` (the local copy, **not** from `@interview/shared`).
 - **`audioCapture`** (`src/services/audioCapture.ts`) — AudioWorklet pipeline (`/audio-worklet.js` must be served by Vite) that streams 16 kHz mono PCM chunks as base64 over the WebSocket.
 - **`liveSpeech`** (`src/services/liveSpeech.ts`) — wraps Web Speech API. `App.tsx` prefers this over `audioCapture` when `isSupported()` is true; the stop handler merges both text sources before sending `transcript.manual`.
 - **`useAssistantStore`** (`src/state/assistantStore.ts`) — single Zustand store for all UI state. Transcript is capped at 100 segments.
-- **`backend.ts`** (`src/services/backend.ts`) — HTTP calls for `/api/models` and `/api/ocr`. Uses `X-Interview-Token` header when `VITE_BACKEND_TOKEN` is set.
+- **`backend.ts`** (`src/services/backend.ts`) — HTTP client for all backend REST calls: `fetchModels`, `runOcr`, `uploadDocument`, `listDocuments`, `resetDocuments`, `updateSetting`. Uses `X-Interview-Token` header when `VITE_BACKEND_TOKEN` is set.
+- **`src/types/shared.ts`** — local WS type definitions. All renderer services import from here, not from `@interview/shared`. Keep in sync with `packages/shared/src/index.ts` when the protocol changes.
 
 ### Electron overlay specifics
 
