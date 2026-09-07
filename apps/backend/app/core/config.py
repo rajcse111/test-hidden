@@ -48,7 +48,8 @@ class Settings(BaseSettings):
     qd_min_words: int = 4
     qd_dedup_window_seconds: float = 30.0
     qd_dedup_similarity_threshold: float = 0.85
-    qd_model: str = "llama3"
+    qd_provider: str = ""
+    qd_model: str = ""
     qd_topic_shift_min_words: int = 6
     qd_cooldown_seconds: float = 5.0
     qd_log_detections: bool = True

@@ -81,15 +81,22 @@ WScript.Sleep 1500
 ' ============================================================
 ' On Error Resume Next guards against any file that is still transitionally
 ' locked (edge case) — those files are silently skipped.
-Dim aFiles(6), sFile
+' NOTE: .venv\installed.flag and .venv\rag_installed.flag are deliberately NOT
+' deleted here. They record that pip finished successfully, and the packages
+' they describe still exist in .venv after a stop - nothing about killing
+' processes uninstalls them. Deleting rag_installed.flag made every stop/start
+' cycle re-run `pip install -r local-rag\requirements.txt`, adding minutes to
+' each restart to reinstall packages that were already present.
+' start-backend-hidden.vbs now writes both flags only when pip actually
+' succeeds, so a stale flag can no longer mask a failed install.
+Dim aFiles(5), sFile
 
 aFiles(0) = sRoot & "\backend.log"
 aFiles(1) = sRoot & "\frontend.log"
 aFiles(2) = sRoot & "\ollama.log"
 aFiles(3) = sRoot & "\ollama_llama3_2_3b.flag"
 aFiles(4) = sRoot & "\ollama_nomic_embed.flag"
-aFiles(5) = sRoot & "\.venv\rag_installed.flag"
-aFiles(6) = sRoot & "\temp_backend_start.bat"
+aFiles(5) = sRoot & "\temp_backend_start.bat"
 
 On Error Resume Next
 For Each sFile In aFiles

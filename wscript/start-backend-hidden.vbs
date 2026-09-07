@@ -18,6 +18,13 @@ Set bat = fso.CreateTextFile(batFile, True)
 bat.WriteLine "@echo off"
 bat.WriteLine "cd /d """ & projectPath & """"
 
+' scripts/setup.ps1 creates .env from .env.example, but this launcher never
+' did - so a wscript-only start silently ran on code defaults.
+bat.WriteLine "if not exist .env ("
+bat.WriteLine "    echo Creating .env from .env.example... >> backend.log"
+bat.WriteLine "    copy .env.example .env >> backend.log 2>&1"
+bat.WriteLine ")"
+
 bat.WriteLine "echo ============================== >> backend.log"
 bat.WriteLine "echo Backend startup: %date% %time% >> backend.log"
 bat.WriteLine "echo Project Path: " & projectPath & " >> backend.log"
@@ -38,14 +45,22 @@ bat.WriteLine "echo Checking Python requirements... >> backend.log"
 bat.WriteLine "if not exist .venv\installed.flag ("
 bat.WriteLine "    echo Installing requirements... >> backend.log"
 bat.WriteLine "    .venv\Scripts\python.exe -m pip install -r apps\backend\requirements.txt >> backend.log 2>&1"
-bat.WriteLine "    echo installed > .venv\installed.flag"
+bat.WriteLine "    if errorlevel 1 ("
+bat.WriteLine "        echo PIP FAILED - flag not written, next run retries >> backend.log"
+bat.WriteLine "    ) else ("
+bat.WriteLine "        echo installed > .venv\installed.flag"
+bat.WriteLine "    )"
 bat.WriteLine ")"
 
 bat.WriteLine "echo Checking RAG requirements... >> backend.log"
 bat.WriteLine "if not exist .venv\rag_installed.flag ("
 bat.WriteLine "    echo Installing RAG requirements... >> backend.log"
 bat.WriteLine "    .venv\Scripts\python.exe -m pip install -r local-rag\requirements.txt >> backend.log 2>&1"
-bat.WriteLine "    echo installed > .venv\rag_installed.flag"
+bat.WriteLine "    if errorlevel 1 ("
+bat.WriteLine "        echo RAG PIP FAILED - flag not written, next run retries >> backend.log"
+bat.WriteLine "    ) else ("
+bat.WriteLine "        echo installed > .venv\rag_installed.flag"
+bat.WriteLine "    )"
 bat.WriteLine ")"
 
 ' IMPORTANT: Activate virtual environment

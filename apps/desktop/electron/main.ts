@@ -1,6 +1,7 @@
 import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, nativeImage, screen, session, shell } from "electron";
 import Store from "electron-store";
 import { spawn, type ChildProcess } from "node:child_process";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,13 +14,37 @@ const isDev = !app.isPackaged;
 app.disableHardwareAcceleration();
 const store = new Store<{ clickThrough: boolean; invisible: boolean; contentProtection: boolean }>({
   defaults: { clickThrough: false, invisible: false, contentProtection: true },
+  // A malformed config.json (stray BOM, truncated write, manual edit) otherwise
+  // throws inside the Store constructor at module load, which Electron reports
+  // as an unreadable "A JavaScript error occurred in the main process" dialog
+  // and the app never starts. Reset to defaults instead of bricking startup.
+  clearInvalidConfig: true,
 });
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcess | null = null;
 
-function startBackend(): void {
+function isBackendAlreadyRunning(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: "127.0.0.1", port });
+    const finish = (inUse: boolean) => {
+      socket.destroy();
+      resolve(inUse);
+    };
+    socket.once("connect", () => finish(true));
+    socket.once("error", () => finish(false));
+    socket.setTimeout(500, () => finish(false));
+  });
+}
+
+async function startBackend(): Promise<void> {
   if (!isDev) return; // packaged app bundles its own backend launch mechanism
+  // wscript/start-backend-hidden.vbs also runs `npm run backend:dev` on :8000.
+  // Without this probe the two race for the port and one dies on bind.
+  if (await isBackendAlreadyRunning(8000)) {
+    console.log("[backend] :8000 already serving — reusing it, not spawning a second uvicorn");
+    return;
+  }
   const projectRoot = path.join(__dirname, "..", "..", "..");
   const pythonExe =
     process.platform === "win32"
@@ -38,13 +63,23 @@ function startBackend(): void {
     console.error("[backend]", data.toString().trimEnd());
   });
 
+  // spawn() reports a missing interpreter as an "error" event, not an exit.
+  // Unhandled, it kills the whole Electron main process with a modal
+  // "A JavaScript error occurred in the main process" dialog — which is
+  // exactly what happens on a fresh clone where .venv does not exist yet.
+  backendProcess.on("error", (err: Error) => {
+    backendProcess = null;
+    console.error(`[backend] could not start ${pythonExe}: ${err.message}`);
+    console.error("[backend] create the venv first: scripts/setup.ps1 or wscript/start-backend-hidden.vbs");
+  });
+
   backendProcess.on("exit", (code) => {
     backendProcess = null;
     const lived = Date.now() - startedAt;
     if (lived >= 3000) {
       // Crash after running — restart after short delay
       console.log(`[backend] exited (code=${code}) after ${lived}ms — restarting in 2 s`);
-      setTimeout(startBackend, 2000);
+      setTimeout(() => void startBackend(), 2000);
     } else {
       // Died immediately: port already in use or venv not found — don't loop
       console.log(`[backend] exited (code=${code}) after ${lived}ms — port in use or startup error, not restarting`);
@@ -117,6 +152,17 @@ function registerShortcuts(): void {
     mainWindow?.webContents.send("shortcut:screenshot");
   });
 
+  // Opacity had no keyboard escape. `invisible` is persisted by electron-store
+  // and re-applied at window creation, so a saved `invisible: true` renders the
+  // overlay at 2% opacity on every launch — and the only way back was the
+  // in-app toggle, which is itself invisible. Ctrl+Shift+Space does not help:
+  // it calls hide()/show(), a separate mechanism that leaves opacity untouched.
+  globalShortcut.register("CommandOrControl+Shift+O", () => {
+    const next = !store.get("invisible");
+    store.set("invisible", next);
+    mainWindow?.setOpacity(next ? 0.02 : 1);
+  });
+
   // Toggle the screen-capture exclusion at runtime (Ctrl+Shift+P).
   // Useful for quickly proving the effect during a Zoom test: with it ON the
   // window vanishes in the shared screen feed; with it OFF the window appears.
@@ -129,7 +175,7 @@ function registerShortcuts(): void {
 }
 
 app.whenReady().then(() => {
-  startBackend();
+  void startBackend();
 
   // Grant microphone access to the renderer (required for both SpeechRecognition and getUserMedia).
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {

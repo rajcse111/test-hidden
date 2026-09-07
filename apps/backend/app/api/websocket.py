@@ -186,7 +186,11 @@ async def interview_ws(websocket: WebSocket) -> None:
                                                 "kind": result.kind,
                                                 "confidence": result.confidence,
                                             })
-                                            qd_live = dataclasses.replace(live, provider="ollama", model=settings.qd_model)
+                                            qd_live = dataclasses.replace(
+                                                live,
+                                                provider=settings.qd_provider or live.provider,
+                                                model=settings.qd_model or live.model,
+                                            )
                                             generation_task = await _handle_transcript(
                                                 websocket, db, settings, llm, prompts,
                                                 qd_live, clean, generation_task,

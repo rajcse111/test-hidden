@@ -48,6 +48,17 @@ class OpenRouterProvider(LlmProvider):
 class AnthropicProvider(LlmProvider):
     _BASE_URL = "https://api.anthropic.com/v1/messages"
     _VERSION = "2023-06-01"
+    # Model families that accept output_config.effort. Older models
+    # (claude-haiku-4-5, claude-sonnet-4-5, ...) reject it with a 400.
+    _EFFORT_MODELS = (
+        "claude-opus-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-sonnet-5",
+        "claude-sonnet-4-6",
+        "claude-fable-5",
+    )
 
     def __init__(self, api_key: str | None):
         self.api_key = api_key
@@ -59,9 +70,13 @@ class AnthropicProvider(LlmProvider):
         # Anthropic separates system prompt from the messages array
         system = next((m["content"] for m in messages if m["role"] == "system"), None)
         user_messages = [m for m in messages if m["role"] != "system"]
-        payload: dict = {"model": model, "messages": user_messages, "max_tokens": 800, "stream": True}
+        payload: dict = {"model": model, "messages": user_messages, "max_tokens": 4000, "stream": True}
         if system:
             payload["system"] = system
+        if model.startswith(self._EFFORT_MODELS):
+            # Interview answers are latency-critical. Low effort keeps adaptive
+            # thinking on but brief; raise it for more thorough answers.
+            payload["output_config"] = {"effort": "low"}
         async with httpx.AsyncClient(timeout=None) as client:
             async with client.stream(
                 "POST",
@@ -73,11 +88,25 @@ class AnthropicProvider(LlmProvider):
                 },
                 json=payload,
             ) as response:
-                response.raise_for_status()
+                if response.status_code >= 400:
+                    # The body is unread while streaming, so raise_for_status()
+                    # would surface a bare status with no cause. Read it first so
+                    # "invalid x-api-key" / "unknown model" reaches the user.
+                    detail = (await response.aread()).decode("utf-8", "replace")
+                    logger.error("Anthropic API error {}: {}", response.status_code, detail)
+                    yield f"Anthropic API error {response.status_code}: {detail}"
+                    return
                 async for line in response.aiter_lines():
                     if not line.startswith("data: "):
                         continue
                     data = json.loads(line.removeprefix("data: "))
+                    if data.get("type") == "error":
+                        message = data.get("error", {}).get("message", "unknown error")
+                        logger.error("Anthropic stream error: {}", message)
+                        yield f"\n[Anthropic error: {message}]"
+                        return
+                    # thinking_delta blocks carry .thinking, not .text, and are
+                    # skipped here — only visible answer text is streamed out.
                     if data.get("type") == "content_block_delta":
                         text = data.get("delta", {}).get("text", "")
                         if text:
